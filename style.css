@@ -618,7 +618,7 @@ footer p {
 #app {
   width: min(980px, calc(100% - 48px));
 }
-header > button {
+.header-actions > button {
   font-size: 11px;
 }
 .banner {
@@ -728,6 +728,19 @@ header > button {
   height: 100%;
   background: #f1ead750;
 }
+.any-road {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 3px 6px;
+  background: var(--paper);
+  color: var(--ink);
+  white-space: nowrap;
+  font:
+    bold 9px "Courier New",
+    monospace;
+}
 .road path {
   fill: none;
   stroke: #f3e9cc;
@@ -790,6 +803,13 @@ header > button {
   padding: 4px;
   min-height: 30px;
   line-height: 1.5;
+}
+.card-description {
+  padding: 2px 4px 6px;
+  min-height: 58px;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--ink);
 }
 .rotate {
   display: block;
@@ -1598,4 +1618,16 @@ select:focus-visible {
   max-height: 260px;
   overflow-y: auto;
   scrollbar-width: thin;
+}
+
+.header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.header-actions [data-action="clear-storage"] {
+  background: transparent;
+  color: var(--quiet);
+  font-size: 10px;
 }

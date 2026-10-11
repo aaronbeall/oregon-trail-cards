@@ -1,0 +1,11 @@
+# Card coherence artwork
+
+Generated with built-in imagegen, using `assets/trail.webp` as a style reference. Active card artwork: `assets/calamity.webp` and `assets/river-ford.webp`. The original broken-wheel illustration was restored as the generic calamity image to make the mishap visually clear. `assets/calamity-unknown.webp` is an unused alternative; the original ferry illustration is also unused.
+
+## Calamity — unknown event
+
+Use case: illustration-story. New replacement raster art for an Oregon Trail card game. Reference image is style reference only. Match flat vintage linocut and distressed screen printing on warm cream paper, soothing muted sage, ochre, faded teal, terracotta and charcoal olive, fine grain, worn ink dropout. Landscape 3:2, no text, symbols, frame, watermark, glossy lighting or gradients. Strong legible silhouettes in a quiet mature whimsical board-game style. Show a small intact covered wagon on a winding prairie trail disappearing behind a hill, the road ahead uncertain beneath broad unsettled clouds, one distant crow and windblown grass. This illustrates DRAWING AN UNKNOWN CALAMITY, not a specific disaster: absolutely no broken wheel, detached wagon parts, wreckage, illness, injury, lightning strike, rain or specific harm. All wheels attached, wagon undamaged. A feeling of unknown surprises around the bend, restrained rather than ominous.
+
+## River — ford
+
+Use case: illustration-story. New replacement raster art for an Oregon Trail card game. Reference image is style reference only. Match flat vintage linocut and distressed screen printing on warm cream paper, soothing muted sage, ochre, faded teal, terracotta and charcoal olive, fine grain, worn ink dropout. Landscape 3:2, no text, symbols, frame, watermark, glossy lighting or gradients. Strong legible silhouettes in a quiet mature whimsical board-game style. Show two sturdy oxen pulling a cream covered wagon through a shallow river ford toward a visible far bank. Wheels partly submerged, ripples around oxen legs, reeds and quiet sage hills, a dirt trail entering and leaving the river. This is a FORD, not a ferry: no boat, raft, floating platform, bridge, docks or drowning person. Physically coherent four-wheeled wagon with all wheels attached. Gentle but uncertain crossing.

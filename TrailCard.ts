@@ -119,12 +119,28 @@ export function label(c: TrailCard) {
       ? "River · drowning risk"
       : "River crossing"
     : c.type === "calamity"
-      ? "Press spacebar to continue"
+      ? "Calamity"
       : c.type === "town"
         ? "Town"
         : c.type === "fort"
           ? "Fort"
           : "Quiet trail";
+}
+export function description(c: TrailCard) {
+  switch (c.type) {
+    case "calamity":
+      return "Draw a calamity and resolve its effect.";
+    case "river":
+      return c.deadly
+        ? "Roll even to cross. A 1 drowns the traveller; 3 or 5 passes the attempt."
+        : "Roll even to cross. A 1 loses a supply; 3 or 5 passes the attempt.";
+    case "town":
+      return "Take one supply OR remove one active calamity.";
+    case "fort":
+      return "Take two available supplies.";
+    case "trail":
+      return "Lay this road and end your turn.";
+  }
 }
 export const roll = (random = Math.random) => Math.floor(random() * 6) + 1;
 export function trailDeck() {

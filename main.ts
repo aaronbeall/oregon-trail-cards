@@ -6,12 +6,14 @@ import {
   titles,
   ends,
   label,
+  description,
   type TrailCard,
   type Supply,
 } from "./TrailCard";
 import "./style.css";
 import { randomName, randomParty, portraitSlots } from "./Party";
 import { gsap } from "gsap";
+import { GameHistory, type GameAction } from "./History";
 const key = "oregon-trail-cards.official.v2";
 let saved;
 try {
@@ -35,13 +37,19 @@ const art = {
   legacy: new URL("./assets/legacy.webp", import.meta.url).href,
   landscape: new URL("./assets/landscape.webp", import.meta.url).href,
   trail: new URL("./assets/trail.webp", import.meta.url).href,
-  river: new URL("./assets/river.webp", import.meta.url).href,
+  river: new URL("./assets/river-ford.webp", import.meta.url).href,
   calamity: new URL("./assets/calamity.webp", import.meta.url).href,
 };
 let setup = !game.state.started,
   confirming = false,
   shopOpen = false,
   storageAvailable = true;
+let history: GameHistory | undefined;
+try {
+  history = new GameHistory(localStorage);
+} catch {
+  storageAvailable = false;
+}
 let party = randomParty(3);
 let firstPlayer = 0;
 let portraitPicker: number | null = null;
@@ -74,9 +82,14 @@ reducedMotion.addEventListener("change", () => {
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) active?.progress(1);
 });
-function persist() {
+function persist(action: GameAction = { type: "resume" }) {
   try {
     localStorage.setItem(key, JSON.stringify(game.state));
+  } catch {
+    storageAvailable = false;
+  }
+  try {
+    history?.capture(game.state, { ...action, rolls: [...pendingRolls] });
   } catch {
     storageAvailable = false;
   }
@@ -84,10 +97,11 @@ function persist() {
 function route(c: TrailCard) {
   const [a, b] = ends(c);
   const universal = c.type === "town" || c.type === "fort";
+  if (universal) return `<span class="any-road">ANY ROAD</span>`;
   return `<svg class="road" viewBox="0 0 120 72" role="img" aria-label="${universal ? "Connects any road" : `Road enters ${["top", "middle", "bottom"][a]} edge and leaves ${["top", "middle", "bottom"][b]} edge`}"><path class="road-shadow" d="M0 ${12 + a * 24} C55 ${12 + a * 24},65 ${12 + b * 24},120 ${12 + b * 24}"/><path d="M0 ${12 + a * 24} C55 ${12 + a * 24},65 ${12 + b * 24},120 ${12 + b * 24}"/>${universal ? '<text x="60" y="40" text-anchor="middle">ANY ROAD</text>' : ""}</svg>`;
 }
 function card(c: TrailCard) {
-  return `<div class="card-art"><img src="${art[c.type]}" alt="" width="768" height="512" draggable="false">${route(c)}</div>`;
+  return `<div class="card-art" title="${escape(label(c))}: ${escape(description(c))}"><img src="${art[c.type]}" alt="" width="768" height="512" draggable="false">${route(c)}</div>`;
 }
 const button = (action: string, text: string, disabled = false) =>
   `<button data-action="${action}" ${disabled ? "disabled" : ""}>${text}</button>`;
@@ -99,7 +113,7 @@ const hazardText: Record<string, string> = {
   water: "Clean water cures this. A second bad-water card kills the oxen.",
   grass: "Only a town removes this. A second grass card kills the oxen.",
   cholera:
-    "Two medicine cure this. A second cholera card kills the afflicted player.",
+    "Two medicine cards cure this. A second cholera card kills the afflicted player.",
   measles:
     "Miss one turn. Medicine cures this; a second measles card kills the afflicted player.",
   arm: "Miss two turns, then recover.",
@@ -129,13 +143,13 @@ function updateLeader() {
   current.replaceWith(template.content);
 }
 function setupScreen() {
-  return `<section class="decision setup"><img class="setup-banner" src="${art.landscape}" alt="A covered wagon beneath quiet prairie hills"><div class="setup-body"><p class="eyebrow">A good journey starts with good company</p><h2>Who’s in the wagon?</h2><p>Room for two to six. Pick your companions, pack the kettle, and keep at least one traveller breathing all the way to Oregon.</p><div class="setup-toolbar"><span>${party.length} travellers aboard</span>${button("randomize", "↻ Randomize everyone")}</div><div class="traveller-grid">${party.map(travellerCard).join("")}</div><div class="party-size">${button("add", "+ Traveller", party.length === 6)}<span>A shared screen. A shared wagon.</span></div><div class="setup-departure">${leaderPicker()}${button("start", "Pack the wagon →")}</div></div></section>`;
+  return `<section class="decision setup"><img class="setup-banner" src="${art.landscape}" alt="A covered wagon beneath quiet prairie hills"><div class="setup-body"><p class="eyebrow">A good journey starts with good company</p><h2>Who’s in the wagon?</h2><p>Room for two to six. Pick your companions, pack the kettle, and keep at least one traveller breathing all the way to Oregon.</p><div class="setup-toolbar"><span>${party.length} travellers aboard</span>${button("randomize", "↻ Randomize everyone")}</div><div class="traveller-grid">${party.map(travellerCard).join("")}</div><div class="party-size">${button("add", "+ Traveller", party.length === 6)}</div><div class="setup-departure">${leaderPicker()}${button("start", "Pack up and start your trek →")}</div></div></section>`;
 }
 function playerTag(index: number) {
   return `<span class="player-tag">${portrait(index)}<span>${escape(game.state.players[index].name)}</span></span>`;
 }
 function handCard(c: TrailCard, i: number) {
-  return `<article class="hand-card ${game.canPlay(c) ? "matches" : ""}" data-hand-index="${i}"><button class="trail-card" data-play="${i}" ${!game.canPlay(c) ? "disabled" : ""} aria-label="Play ${label(c)}">${card(c)}<div class="card-title">${label(c)}</div><div class="card-caption">${game.matches(c) ? "Road connects" : "Edges do not meet"}${c.deadly ? " · 1 drowns" : ""}</div></button><button class="rotate" data-rotate="${i}" ${game.state.phase !== "turn" ? "disabled" : ""} aria-label="Rotate ${label(c)} 180 degrees">↻ Rotate 180°</button></article>`;
+  return `<article class="hand-card ${game.canPlay(c) ? "matches" : ""}" data-hand-index="${i}"><button class="trail-card" data-play="${i}" ${!game.canPlay(c) ? "disabled" : ""} aria-label="Play ${label(c)}">${card(c)}<div class="card-title">${label(c)}</div><div class="card-description">${description(c)}</div><div class="card-caption">${c.type === "town" || c.type === "fort" ? "Connects any road" : game.matches(c) ? "Road connects" : game.matches({ ...c, rotated: !c.rotated }) ? "Rotate to connect" : "Edges do not meet"}</div></button><button class="rotate" data-rotate="${i}" ${game.state.phase !== "turn" ? "disabled" : ""} aria-label="Rotate ${label(c)} 180 degrees">↻ Rotate 180°</button></article>`;
 }
 function hazards() {
   return game.state.hazards
@@ -211,7 +225,12 @@ function decision() {
             `<button data-town="${h.id}">Remove ${titles[h.kind]}</button>`,
         )
         .join("");
-    choices += button("leave", "Leave without supplies");
+    choices += button(
+      "leave",
+      s.phase === "fort" && s.take < 2
+        ? "Leave with what you have"
+        : "Leave without supplies",
+    );
     text += ` ${s.take} pick${s.take === 1 ? "" : "s"} remaining.`;
   } else if (s.phase === "discard") {
     heading = "One supply must go.";
@@ -270,7 +289,7 @@ function trading() {
 }
 function render() {
   const s = game.state;
-  const markup = `<header><div><p class="eyebrow">A cooperative westward wander · 2–6 players</p><h1>Oregon Trail <i>Cards</i></h1></div>${setup ? (s.started ? button("resume", "Back to journey") : "") : button("new", "New journey")}</header>${confirming ? `<aside class="restart-confirm"><span>Leave this journey behind?</span><div class="restart-actions">${button("cancel", "Stay here")}${button("confirm-new", "Start afresh")}</div></aside>` : ""}${
+  const markup = `<header><div><p class="eyebrow">A cooperative westward wander · 2–6 players</p><h1>Oregon Trail <i>Cards</i></h1></div><div class="header-actions">${setup ? (s.started ? button("resume", "Back to journey") : "") : button("new", "New journey")}${button("clear-storage", "Clear local storage")}</div></header>${confirming ? `<aside class="restart-confirm"><span>Leave this journey behind?</span><div class="restart-actions">${button("cancel", "Stay here")}${button("confirm-new", "Start afresh")}</div></aside>` : ""}${
     setup
       ? setupScreen()
       : `<section class="journey"><img class="banner" src="${art.landscape}" alt="A weathered print of a wagon beneath quiet prairie hills"><div class="map-track"><span style="width:${s.count * 2}%"></span></div></section><section class="players" aria-label="Travellers">${s.players.map((p, i) => `<div class="player ${i === s.current ? "current" : ""} ${!p.alive ? "dead" : ""}">${portrait(i)}<div><strong>${escape(p.name)} ${!p.alive ? "†" : i === s.current ? "←" : ""}</strong><small>${p.alive ? `${p.hand.length} trail · ${p.supplies.length} supplies` : escape(p.epitaph)}</small></div></div>`).join("")}</section>${trail()}${decision()}${
@@ -294,7 +313,7 @@ function render() {
             : ""
         }`
   }
-<footer><details><summary>Rules of the road</summary><div class="help-content"><p>Play one connected trail card OR spend a turn supplying remedies. There is no automatic replacement draw. If no trail fits, draw one and end your turn. Supplies can be traded two for one at any time. Rivers pass between players until an even roll succeeds.</p><p>Calamity deadlines end after the drawer’s next turn (or second turn for two rounds), giving everyone a chance to help. Broken wagon parts and dead oxen stop trail play. Dead players may will two supplies. The remaining travellers carry on.</p><p>Five trail cards become one stack, first card on top. Only the very first stack can use the fifth instead. Keep connecting the exposed top; recycle the four buried cards in each stack when the draw pile is empty. Fifty cards means Oregon.</p><p>Based on the <a href="https://www.buffalolib.org/sites/default/files/gaming-unplugged/inst/The%20Oregon%20Trail%20Card%20Game%20Instructions.pdf" target="_blank" rel="noreferrer">2017 Pressman rules</a>. See the repository’s rules notes for card text and edition differences. Your journey saves on this device.</p></div></details><span>${storageAvailable ? "Saved here" : "This visit only"}</span></footer>`;
+<footer><details><summary>Rules of the road</summary><div class="help-content"><p>Play one connected trail card OR spend a turn supplying remedies. There is no automatic replacement draw. If no trail fits, draw one and end your turn. Supplies can be traded two for one at any time. Rivers pass between players until an even roll succeeds.</p><p>Calamity deadlines end after the drawer’s next turn (or second turn for two rounds), giving everyone a chance to help. Broken wagon parts and dead oxen stop trail play. Dead players may will two supplies. The remaining travellers carry on.</p><p>Five trail cards become one stack, first card on top. Only the very first stack can use the fifth instead. Keep connecting the exposed top; recycle the four buried cards in each stack when the draw pile is empty. Fifty cards means Oregon.</p><p>Based on the <a href="https://www.buffalolib.org/sites/default/files/gaming-unplugged/inst/The%20Oregon%20Trail%20Card%20Game%20Instructions.pdf" target="_blank" rel="noreferrer">2017 Pressman rules</a>. See the repository’s rules notes for card text and edition differences. Your journey saves on this device.</p></div></details><span>${storageAvailable ? "Saved here" : "Couldn’t save locally"}</span></footer>`;
   const template = document.createElement("template");
   template.innerHTML = markup;
   const sectionKey = (el: Element) => `${el.tagName}:${el.classList[0] ?? ""}`;
@@ -472,6 +491,39 @@ app.addEventListener("click", async (event) => {
   );
   if (!button || button.disabled || busy) return;
   const d = button.dataset;
+  if (d.action === "clear-storage") {
+    if (
+      window.confirm(
+        "Clear all local storage for this site? This removes saved journeys and game history.",
+      )
+    ) {
+      try {
+        localStorage.clear();
+        window.location.reload();
+      } catch {
+        window.alert("Local storage could not be cleared.");
+      }
+    }
+    return;
+  }
+  const action: GameAction = {
+    type:
+      d.action ??
+      Object.keys(d).find(
+        (key) => !["player", "owner", "supply"].includes(key),
+      ) ??
+      "unknown",
+    args: { ...d },
+  };
+  // Capture choices before the DOM or game state changes (trades, wills, epitaphs).
+  app.querySelectorAll<HTMLSelectElement>("select[id]").forEach((select) => {
+    action.args![select.id] = select.value;
+  });
+  action.args!.payments = Array.from(
+    app.querySelectorAll<HTMLInputElement>('input[name="payment"]:checked'),
+  ).map((input) => input.value);
+  const epitaph = app.querySelector<HTMLInputElement>("#epitaph");
+  if (epitaph) action.args!.epitaph = epitaph.value;
   let changed = false;
   if (setup)
     party = Array.from(
@@ -746,10 +798,10 @@ app.addEventListener("click", async (event) => {
     const index = Number(d.rotate);
     if (!game.rotate(index)) return;
     setBusy(true);
-    persist();
+    persist(action);
     try {
       const old = button.closest(".hand-card")!;
-      if (!reducedMotion.matches)
+      if (!reducedMotion.matches && old.querySelector(".road"))
         await playTimeline((tl) =>
           tl.to(old.querySelector(".road"), {
             rotation: 180,
@@ -796,7 +848,7 @@ app.addEventListener("click", async (event) => {
     return;
   }
   setBusy(true);
-  persist();
+  persist(action);
   try {
     for (const n of pendingRolls.splice(0)) await tumbleDie(n);
     const changedSections = render();
