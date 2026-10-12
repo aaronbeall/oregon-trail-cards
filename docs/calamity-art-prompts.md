@@ -1,0 +1,44 @@
+# Calamity result artwork
+
+Generated with built-in imagegen using calamity.webp as a style-only reference. Originals remain in the thread’s generated_images directory; project assets are 900×600 WebP. The six existing wagon calamities keep their specific artwork. All ten personal/event calamities below now have dedicated result artwork, also used in active personal-condition details. The generic broken-wheel image is reserved for unrevealed calamity trail cards.
+
+## assets/calamity-dysentery.webp
+
+Original standalone landscape 3:2 illustration for an Oregon Trail card game. Use reference for STYLE ONLY, not composition. Flat vintage linocut/distressed screenprint on cream paper, muted sage, ochre, terracotta and charcoal olive inks, fine grain and ink dropout. Clear simple focal subject readable as a small thumbnail, soothing restrained palette. No text, letters, frame, watermark, wheel damage or gore. Distinct composition, not a wagon panorama. Any traveller or travelling team faces RIGHT. DYSENTERY: exhausted pioneer crouched in right-facing profile, wrapped in a blanket beside a small rough wooden prairie outhouse with crescent opening. One hand presses their abdomen, a tin water cup sits on the earth. Outhouse fills right half, distressed traveller left foreground. Clearly severe intestinal illness; non-graphic, no bodily fluids.
+
+## assets/calamity-cholera.webp
+
+Original standalone landscape 3:2 illustration for an Oregon Trail card game. Use reference for STYLE ONLY, not composition. Flat vintage linocut/distressed screenprint on cream paper, muted sage, ochre, terracotta and charcoal olive inks, fine grain and ink dropout. Clear simple focal subject readable as a small thumbnail, soothing restrained palette. No text, letters, frame, watermark, wheel damage or gore. Distinct composition, not a wagon panorama. Any traveller or travelling team faces RIGHT. CHOLERA: high close overhead angle on a weak traveller sitting on a bedroll, right-facing silhouette bent over a plain wash basin with a medicine bottle beside it. Their hand grips the basin rim, a water bucket behind. Dry dusty camp. Suggest sudden debilitating sickness without visible vomit or bodily fluids. Basin and exhausted posture dominate.
+
+## assets/calamity-measles.webp
+
+Original standalone landscape 3:2 illustration for an Oregon Trail card game. Use reference for STYLE ONLY, not composition. Flat vintage linocut/distressed screenprint on cream paper, muted sage, ochre, terracotta and charcoal olive inks, fine grain and ink dropout. Clear simple focal subject readable as a small thumbnail, soothing restrained palette. No text, letters, frame, watermark, wheel damage or gore. Distinct composition, not a wagon panorama. Any traveller or travelling team faces RIGHT. MEASLES: close right-facing profile portrait of a sick pioneer wrapped in a sage blanket, faint but clearly visible small terracotta rash spots on cheek, neck and forehead, one hand on feverish forehead. Cream background with minimal tent canvas shape. Face and rash fill frame, no doctor or medicine bottle.
+
+## assets/calamity-typhoid.webp
+
+Original standalone landscape 3:2 illustration for an Oregon Trail card game. Use reference for STYLE ONLY, not composition. Flat vintage linocut/distressed screenprint on cream paper, muted sage, ochre, terracotta and charcoal olive inks, fine grain and ink dropout. Clear simple focal subject readable as a small thumbnail, soothing restrained palette. No text, letters, frame, watermark, wheel damage or gore. Distinct composition, not a wagon panorama. Any traveller or travelling team faces RIGHT. TYPHOID FEVER: overhead diagonal view of a feverish traveller lying on a cot under a thin blanket, eyes closed, cool damp cloth on forehead, companion's hand offering a cup of clean water, small medicine bottle at cot edge. Cot fills composition. Restrained medical camp scene, no rash, wash basin or outhouse.
+
+## assets/calamity-arm.webp
+
+Original standalone landscape 3:2 illustration for an Oregon Trail card game. Use reference for STYLE ONLY, not composition. Flat vintage linocut/distressed screenprint on cream paper, muted sage, ochre, terracotta and charcoal olive inks, fine grain and ink dropout. Clear simple focal subject readable as a small thumbnail, soothing restrained palette. No text, letters, frame, watermark, wheel damage or gore. Distinct composition, not a wagon panorama. Any traveller or travelling team faces RIGHT. BROKEN ARM: tightly cropped torso of a pioneer in right-facing profile with their forearm firmly wrapped in a cloth sling and wooden splint, visible fingers and sling knot at shoulder. A companion carefully secures a bandage. The sling and splint are the central focal point, not a face or wagon.
+
+## assets/calamity-cold.webp
+
+Original standalone landscape 3:2 illustration for an Oregon Trail card game. Use reference for STYLE ONLY, not composition. Flat vintage linocut/distressed screenprint on cream paper, muted sage, ochre, terracotta and charcoal olive inks, fine grain and ink dropout. Clear simple focal subject readable as a small thumbnail, soothing restrained palette. No text, letters, frame, watermark, wheel damage or gore. Distinct composition, not a wagon panorama. Any traveller or travelling team faces RIGHT. EXTREME COLD: tiny prairie camp buried in windblown snow, two blanket-wrapped travellers huddled beside a small struggling campfire, frosted kettle, bare grass under ice. Strong diagonal snow gusts, cold muted teal/sage with warm ochre embers. No wagon, not a generic temperate landscape.
+
+## assets/calamity-starvation.webp
+
+Original standalone landscape 3:2 illustration for an Oregon Trail card game. Use reference for STYLE ONLY, not composition. Flat vintage linocut/distressed screenprint on cream paper, muted sage, ochre, terracotta and charcoal olive inks, fine grain and ink dropout. Clear simple focal subject readable as a small thumbnail, soothing restrained palette. No text, letters, frame, watermark, wheel damage or gore. Distinct composition, not a wagon panorama. Any traveller or travelling team faces RIGHT. STARVATION: intimate overhead still life of an EMPTY wooden food bowl, empty open burlap sack and a wooden spoon on rough camp table, exhausted traveller's thin hands resting beside bowl. No food anywhere. Bowl large and centered, muted dry ochre palette, tender rather than grotesque.
+
+## assets/calamity-thief.webp
+
+Original standalone landscape 3:2 illustration for an Oregon Trail card game. Use reference for STYLE ONLY, not composition. Flat vintage linocut/distressed screenprint on cream paper, muted sage, ochre, terracotta and charcoal olive inks, fine grain and ink dropout. Clear simple focal subject readable as a small thumbnail, soothing restrained palette. No text, letters, frame, watermark, wheel damage or gore. Distinct composition, not a wagon panorama. Any traveller or travelling team faces RIGHT. THEFT: close composition of a shadowy gloved hand secretly lifting a tied supply sack off the rear of an intact wagon at dusk. Sack dominates center, cropped wagon boards, second gloved hand reaching right, sneaking figure silhouette partly outside frame. Clearly stolen belongings, no weapon, no broken wheel.
+
+## assets/calamity-hunting.webp
+
+Original standalone landscape 3:2 illustration for an Oregon Trail card game. Use reference for STYLE ONLY, not composition. Flat vintage linocut/distressed screenprint on cream paper, muted sage, ochre, terracotta and charcoal olive inks, fine grain and ink dropout. Clear simple focal subject readable as a small thumbnail, soothing restrained palette. No text, letters, frame, watermark, wheel damage or gore. Distinct composition, not a wagon panorama. Any traveller or travelling team faces RIGHT. HUNTING: right-facing pioneer crouching on left behind prairie brush, holding an old frontier rifle pointed toward a distant deer on the right. Wide quiet meadow, deer alive and alert, no discharge, blood or carcass. Rifle and sightline lead left to right. A small food sack near hunter for context.
+
+## assets/calamity-snake.webp
+
+Original standalone landscape 3:2 illustration for an Oregon Trail card game. Use reference for STYLE ONLY, not composition. Flat vintage linocut/distressed screenprint on cream paper, muted sage, ochre, terracotta and charcoal olive inks, fine grain and ink dropout. Clear simple focal subject readable as a small thumbnail, soothing restrained palette. No text, letters, frame, watermark, wheel damage or gore. Distinct composition, not a wagon panorama. Any traveller or travelling team faces RIGHT. SNAKEBITE: very close ground-level view of a coiled rattlesnake striking a pioneer's leather boot and ankle on dusty prairie, visible rattle and curved snake body, trousers cropped above ankle. Snake head points RIGHT toward boot. No wound or blood. Snake and boot fill frame, unmistakable bite hazard.
+

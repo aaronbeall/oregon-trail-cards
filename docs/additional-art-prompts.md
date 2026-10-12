@@ -22,3 +22,11 @@ Use case: illustration-story. Original raster illustration for a minimal Oregon 
 
 Use case: illustration-story. Original raster illustration for a minimal Oregon Trail card game. Flat vintage 1940s travel poster, hand-cut linocut, distressed screen printing on cream paper. Soothing sage green, faded teal, ochre, dusty terracotta and charcoal olive inks, fine grain, ink dropout and worn edges. No gradients, glossy rendering, typography, borders or watermark. Landscape 3:2. One small worn gravestone beneath prairie wildflowers, a tiny bird resting nearby, quiet rolling sage hills. Restrained, tender and whimsical without mockery. No inscription, skulls or bones. For a game farewell/epitaph panel.
 
+
+## assets/independence.webp
+
+Generated with built-in imagegen: 3:2 Independence starting-point scene, frontier courthouse and town square, packed wagon and yoked oxen departing to the right onto a prairie road. Muted distressed linocut/screenprint style, cream paper, no lettering; town.webp used as a style-only reference. Exported to 900×600 WebP. Displayed as the graphical trailhead with live START badge and Independence/Missouri caption.
+
+## assets/progress-wagon.webp
+
+Built-in imagegen: isolated right-facing side-view covered wagon, cream canopy, sage wooden bed, olive wheels and projecting tow tongue; simplified distressed linocut icon on a transparent background, no oxen or scenery. Independence illustration used as style reference. Exported at 160px wide and displayed as a 40px marker attached to the progress fill endpoint.
