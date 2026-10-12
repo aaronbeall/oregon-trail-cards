@@ -18,6 +18,8 @@ export type TrailCard = {
   type: "trail" | "calamity" | "river" | "town" | "fort";
   rotated: boolean;
   deadly?: boolean;
+  journeyStep?: number;
+  locationName?: string;
 };
 export type Calamity =
   | "axle"
@@ -54,7 +56,25 @@ export const titles: Record<Calamity, string> = {
   snake: "Snakebite",
   dysentery: "Dysentery",
 };
+export type TrailReport = {
+  card?: TrailCard;
+  title: string;
+  scene?: "success" | "loss" | "drowning" | "attempt" | "restored";
+  calamity?: Calamity;
+  owner?: number;
+  attempts?: number;
+  results?: string[];
+  remedies?: (Calamity | { kind: Calamity; owner?: number })[];
+  wagonRemedies?: { kind: Calamity; supply: Supply; player: number }[];
+  losses: number;
+  lostSupplies?: Supply[];
+  lostSupplyOwners?: number[];
+  gainOwner?: number;
+  gains: Partial<Record<Supply, number>>;
+  deaths: { name: string; cause: string }[];
+};
 export type Hazard = {
+  trailStep?: number;
   virtual?: boolean;
   id: number;
   kind: Calamity;
@@ -65,6 +85,41 @@ export type Hazard = {
   born: number;
   skip: number;
 };
+export const JOURNEY_START_DATE = "1847-04-01";
+// Fictional birthdays belong to the illustrated characters, in atlas order.
+export const portraitBirthdays = [
+  "1822-08-19",
+  "1792-11-03",
+  "1817-05-26",
+  "1813-09-12",
+  "1782-06-07",
+  "1824-12-14",
+  "1775-10-22",
+  "1821-07-04",
+  "1802-08-30",
+  "1799-05-18",
+  "1827-11-09",
+  "1770-09-23",
+  "1815-06-16",
+  "1811-10-05",
+  "1777-07-28",
+  "1819-12-02",
+  "1804-08-11",
+  "1795-05-31",
+] as const;
+export function journeyDate(days: number, start = JOURNEY_START_DATE) {
+  const date = new Date(`${start}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+export function calendarDate(date: string) {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(`${date}T12:00:00Z`));
+}
 export type Player = {
   portrait?: number;
   name: string;
@@ -72,6 +127,10 @@ export type Player = {
   hand: TrailCard[];
   supplies: Supply[];
   epitaph: string;
+  deathCause?: string;
+  birthday?: string;
+  deathDate?: string;
+  deathDay?: number;
 };
 export type Phase =
   | "turn"
@@ -107,6 +166,8 @@ export type Journey = {
   note: string;
   die: number | null;
   started: boolean;
+  startDate?: string;
+  trailReports?: Record<number, TrailReport>;
 };
 export function ends(c: TrailCard): [Position, Position] {
   return c.rotated
@@ -114,6 +175,8 @@ export function ends(c: TrailCard): [Position, Position] {
     : [c.left, c.right];
 }
 export function label(c: TrailCard) {
+  if ((c.type === "town" || c.type === "fort") && c.locationName)
+    return c.locationName;
   return c.type === "river"
     ? c.deadly
       ? "River · drowning risk"
@@ -129,7 +192,7 @@ export function label(c: TrailCard) {
 export function description(c: TrailCard) {
   switch (c.type) {
     case "calamity":
-      return "Draw a calamity and resolve its effect.";
+      return "Face a calamity and resolve its effect.";
     case "river":
       return c.deadly
         ? "Roll even to cross. A 1 drowns the traveller; 3 or 5 passes the attempt."
@@ -183,16 +246,96 @@ export class TrailGame {
     public random = Math.random,
     saved?: Journey,
     private onRoll?: (n: number) => void,
+    private onCalamity?: (kind: Calamity | undefined) => void,
   ) {
     this.state = saved ?? this.fresh(["Juniper", "Clementine", "Otis"]);
+    this.state.startDate ??= JOURNEY_START_DATE;
+    // Older saves stored five-card piles; restore their surviving cards in visit order.
+    if (this.state.stacks.length) {
+      const earlier = this.state.stacks.flatMap((pile, index) =>
+        pile.map((c, offset) => ({
+          ...c,
+          journeyStep: c.journeyStep ?? index * 5 + offset + 1,
+        })),
+      );
+      this.state.run = [...earlier, ...this.state.run].sort(
+        (a, b) =>
+          (a.journeyStep ?? this.state.count) -
+          (b.journeyStep ?? this.state.count),
+      );
+      this.state.stacks = [];
+    }
+    if (this.state.phase === "stack") this.finishCard();
+    if (this.state.resume === "stack") this.state.resume = "turn";
+    this.nameLocations([
+      ...this.state.deck,
+      ...this.state.run,
+      ...this.state.players.flatMap((p) => p.hand),
+      ...Object.values(this.state.trailReports ?? {}).flatMap((r) =>
+        r.card ? [r.card] : [],
+      ),
+    ]);
+    for (const report of Object.values(this.state.trailReports ?? {}))
+      if (report.card?.locationName && ["Town", "Fort"].includes(report.title))
+        report.title = report.card.locationName;
     const assigned = new Set(this.state.players.map((p) => p.portrait));
     const available = this.shuffle(
       Array.from({ length: PORTRAIT_COUNT }, (_, i) => i).filter(
         (i) => !assigned.has(i),
       ),
     );
-    for (const player of this.state.players)
+    for (const player of this.state.players) {
       if (player.portrait === undefined) player.portrait = available.pop()!;
+      player.birthday ??= portraitBirthdays[player.portrait];
+    }
+  }
+  private nameLocations(cards: TrailCard[]) {
+    const locations = cards.filter(
+      (c) => c.type === "town" || c.type === "fort",
+    );
+    const assigned = new Map(
+      locations
+        .filter((c) => c.locationName)
+        .map((c) => [c.id, c.locationName!]),
+    );
+    const used = new Set(assigned.values());
+    const townNames = this.shuffle(
+      [
+        "Clover Creek",
+        "Juniper Hollow",
+        "Willow Bend",
+        "Bramble Crossing",
+        "Copper Kettle",
+        "Whispering Pines",
+        "Thistle Junction",
+        "Hazel Springs",
+        "Cottonwood Vale",
+        "Sparrow Ridge",
+        "Prairie Lantern",
+        "Applewood Landing",
+      ].filter((n) => !used.has(n)),
+    );
+    const fortNames = this.shuffle(
+      [
+        "Fort Juniper",
+        "Fort Lantern",
+        "Fort Willow",
+        "Fort Cinder",
+        "Fort Ashwood",
+        "Fort Sparrow",
+        "Fort Cedar",
+        "Fort Bramble",
+        "Fort Hearth",
+        "Fort Mosswood",
+        "Fort Cottonwood",
+        "Fort Copper",
+      ].filter((n) => !used.has(n)),
+    );
+    for (const c of locations) {
+      if (!assigned.has(c.id))
+        assigned.set(c.id, (c.type === "town" ? townNames : fortNames).pop()!);
+      c.locationName = assigned.get(c.id);
+    }
   }
   shuffle<T>(a: T[]) {
     for (let i = a.length - 1; i > 0; i--) {
@@ -224,6 +367,7 @@ export class TrailGame {
     );
     const players = playerNames.map((name, index) => ({
       portrait: portraits[index],
+      birthday: portraitBirthdays[portraits[index]],
       name,
       alive: true,
       hand: deck.splice(0, 5),
@@ -232,6 +376,7 @@ export class TrailGame {
     }));
     const shop = { ...stock };
     players.forEach((p) => p.supplies.forEach((k) => shop[k]--));
+    this.nameLocations(deck);
     return {
       version: 2,
       players,
@@ -259,6 +404,7 @@ export class TrailGame {
       note: "The kettle is packed. Fifty little roads to Oregon.",
       die: null,
       started: false,
+      startDate: JOURNEY_START_DATE,
     };
   }
   reset(playerNames: string[], first = 0, portraits?: number[]) {
@@ -277,7 +423,10 @@ export class TrailGame {
       return false;
     this.state = this.fresh(playerNames.map((n) => n.trim().slice(0, 30)));
     if (portraits)
-      this.state.players.forEach((p, i) => (p.portrait = portraits[i]));
+      this.state.players.forEach((p, i) => {
+        p.portrait = portraits[i];
+        p.birthday = portraitBirthdays[portraits[i]];
+      });
     this.state.current = first;
     this.state.started = true;
     return true;
@@ -292,7 +441,7 @@ export class TrailGame {
   }
   get top() {
     const s = this.state;
-    return s.run.at(-1) ?? s.stacks.at(-1)?.[0];
+    return s.run.at(-1);
   }
   get blocked() {
     return this.state.hazards.some((h) =>
@@ -405,6 +554,9 @@ export class TrailGame {
       p = s.players[i];
     if (!p.alive) return;
     p.alive = false;
+    p.deathCause = cause;
+    p.deathDay = s.turn - 1;
+    p.deathDate = journeyDate(p.deathDay, s.startDate);
     p.epitaph = `Here rests ${p.name}. ${cause}. The prairie remembers.`;
     s.deck.push(...p.hand);
     p.hand = [];
@@ -451,7 +603,10 @@ export class TrailGame {
     dead.supplies.forEach((k) => s.shop[k]++);
     dead.supplies = [];
     s.legacyCount = 0;
-    if (!s.deaths.length) s.phase = s.resume;
+    if (!s.deaths.length) {
+      s.phase = s.resume;
+      if (s.phase === "stack") this.finishCard();
+    }
     return true;
   }
   private endTurn() {
@@ -488,29 +643,6 @@ export class TrailGame {
   private finishCard() {
     const s = this.state;
     if (s.status !== "travel") return;
-    if (s.run.length === 5) {
-      if (!s.stacks.length) {
-        s.phase = "stack";
-        this.legacy();
-        return;
-      }
-      this.stack(0);
-      return;
-    }
-    s.phase = "turn";
-    this.endTurn();
-  }
-  stack(index: number) {
-    const s = this.state;
-    if (
-      s.run.length !== 5 ||
-      (index !== 0 && !(index === 4 && !s.stacks.length)) ||
-      s.status !== "travel"
-    )
-      return false;
-    const cards = s.run.splice(0);
-    const top = cards.splice(index, 1)[0];
-    s.stacks.push([top, ...cards]);
     s.phase = "turn";
     this.endTurn();
     if (s.count === 50 && s.status === "travel") {
@@ -518,7 +650,6 @@ export class TrailGame {
       s.note =
         "Willamette Valley at last. One survivor means a victory for everyone. Put the kettle on.";
     }
-    return true;
   }
   draw() {
     const s = this.state;
@@ -531,7 +662,19 @@ export class TrailGame {
     )
       return false;
     if (!s.deck.length) {
-      const recycled = s.stacks.flatMap((stack) => stack.splice(1));
+      // Keep the current connection physical; earlier visits remain immutable in the timeline.
+      const reports = (s.trailReports ??= {});
+      s.run.forEach((c, i) => {
+        const step = c.journeyStep ?? s.count - s.run.length + i + 1;
+        const report = (reports[step] ??= {
+          title: label(c),
+          losses: 0,
+          gains: {},
+          deaths: [],
+        });
+        report.card ??= { ...c, journeyStep: step };
+      });
+      const recycled = s.run.splice(0, Math.max(0, s.run.length - 1));
       s.deck = this.shuffle(recycled);
     }
     if (s.deck.length) {
@@ -713,12 +856,13 @@ export class TrailGame {
     if (!s.calamities.length)
       s.calamities = this.shuffle(s.discarded.splice(0));
     const k = s.calamities.shift();
+    this.onCalamity?.(k);
     if (!k) {
       s.note = "The calamity pile is empty; no new calamity.";
       this.finishCard();
       return;
     }
-    s.note = `${this.player.name} drew ${titles[k].toLowerCase()}.`;
+    s.note = `${this.player.name} faced ${titles[k].toLowerCase()}.`;
     if (["snake", "dysentery"].includes(k)) {
       s.discarded.push(k);
       this.kill(s.current, titles[k]);

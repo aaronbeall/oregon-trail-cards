@@ -11,7 +11,16 @@ const source = ts.transpileModule(
     },
   },
 ).outputText;
-const { TrailGame, trailDeck, ends, readSave, names } = await import(
+const {
+  TrailGame,
+  trailDeck,
+  ends,
+  readSave,
+  names,
+  portraitBirthdays,
+  journeyDate,
+  JOURNEY_START_DATE,
+} = await import(
   `data:text/javascript;base64,${Buffer.from(source).toString("base64")}`
 );
 function seed(n) {
@@ -102,30 +111,26 @@ test("playing does not replenish; draw one ends turn even if it now fits", () =>
   assert.equal(g.state.players[1].hand.length, 2);
   assert.equal(g.state.current, 2);
 });
-test("first stack chooses first or fifth; subsequent stacks expose first; ten stacks win", () => {
+test("the trail stays continuous across five-card boundaries and wins at fifty", () => {
   const g = fresh();
   g.state.run = Array.from({ length: 4 }, (_, i) =>
     card("trail", 1, 1, { id: i }),
   );
   g.state.count = 4;
-  g.player.hand = [card("trail", 1, 1, { id: 4 })];
-  g.play(0);
-  assert.equal(g.state.phase, "stack");
-  g.stack(4);
-  assert.equal(g.state.stacks[0][0].id, 4);
+  g.player.hand = [card("trail", 1, 0, { id: 4 })];
+  assert.equal(g.play(0), true);
+  assert.equal(g.state.phase, "turn");
+  assert.equal(g.state.stacks.length, 0);
+  assert.equal(g.state.run.length, 5);
+  assert.equal(g.top.id, 4);
   assert.equal(g.state.current, 1);
-  g.state.run = Array.from({ length: 4 }, (_, i) =>
-    card("trail", 1, 1, { id: 5 + i }),
-  );
-  g.state.count = 9;
-  g.player.hand = [card()];
-  g.play(0);
-  assert.equal(g.state.stacks[1][0].id, 5);
-  g.state.stacks = Array.from({ length: 9 }, () => [card()]);
-  g.state.run = Array.from({ length: 4 }, () => card());
+  g.player.hand = [card("trail", 0, 0, { id: 5 })];
+  assert.equal(g.play(0), true);
+  assert.equal(g.top.id, 5);
+  assert.equal(g.state.run.length, 6);
   g.state.count = 49;
-  g.player.hand = [card()];
-  g.play(0);
+  g.player.hand = [card("trail", 0, 0)];
+  assert.equal(g.play(0), true);
   assert.equal(g.state.status, "won");
 });
 test("failed crossings pass players without laying cards; all rolls emit animation results", () => {
@@ -294,24 +299,23 @@ test("town and fort take only available stock; trading is atomic and no turn con
   assert.deepEqual(g.player.supplies, ["medicine"]);
   assert.equal(g.state.turn, turn);
 });
-test("empty draw pile recycles buried cards but preserves stack top and progress", () => {
+test("empty draw pile recycles earlier roads, preserving the last connection and visit history", () => {
   const g = fresh();
-  g.state.stacks = [
-    [
-      card("trail", 0, 0, { id: 1 }),
-      ...Array.from({ length: 4 }, (_, i) =>
-        card("trail", 0, 0, { id: i + 2 }),
-      ),
-    ],
-  ];
+  g.state.run = Array.from({ length: 5 }, (_, i) =>
+    card("trail", 0, 0, { id: i + 1, journeyStep: i + 1 }),
+  );
   g.state.count = 5;
   g.state.deck = [];
   g.player.hand = [card("trail", 1, 1)];
-  g.draw();
-  assert.equal(g.state.stacks[0].length, 1);
-  assert.equal(g.state.stacks[0][0].id, 1);
+  assert.equal(g.draw(), true);
+  assert.equal(g.state.run.length, 1);
+  assert.equal(g.top.id, 5);
   assert.equal(g.state.deck.length, 3);
   assert.equal(g.state.count, 5);
+  assert.deepEqual(
+    Object.values(g.state.trailReports).map((r) => r.card.id),
+    [1, 2, 3, 4, 5],
+  );
 });
 test("versioned saves resume pending states and reject incompatible data", () => {
   const g = fresh();
@@ -602,4 +606,23 @@ test("all 18 portraits can be selected and appear in the random pool", () => {
     readSave(JSON.stringify(g.state)).players.map((p) => p.portrait),
     [6, 17],
   );
+});
+
+test("portrait birthdays and fictional journey dates persist through death and reload", () => {
+  const g = fresh();
+  g.reset(["Willa", "Otis"], 0, [0, 11]);
+  assert.equal(g.state.startDate, JOURNEY_START_DATE);
+  assert.equal(g.state.players[0].birthday, portraitBirthdays[0]);
+  assert.equal(g.state.players[1].birthday, portraitBirthdays[11]);
+  assert.equal(journeyDate(30), "1847-05-01");
+  g.state.turn = 13;
+  calamity(g, "dysentery");
+  assert.equal(g.state.players[0].deathDay, 12);
+  assert.equal(g.state.players[0].deathDate, "1847-04-13");
+  const restored = new TrailGame(
+    Math.random,
+    readSave(JSON.stringify(g.state)),
+  );
+  assert.equal(restored.state.players[0].deathDate, "1847-04-13");
+  assert.equal(restored.state.players[0].birthday, portraitBirthdays[0]);
 });

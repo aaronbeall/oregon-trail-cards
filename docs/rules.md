@@ -12,7 +12,7 @@ A turn plays one connected Trail card or supplies to remedy an active calamity. 
 
 The road must meet at the card edges without sliding. Rotating 180 degrees flips both ends and their positions. Towns and Forts accept any road, and any road may follow them. A Town grants one available supply **or** removes one active calamity; a Fort grants two available supplies.
 
-Every five Trail cards collapse into a stack with the **first** card on top. Only the first stack offers a choice of the first or fifth card. The next road connects to that exposed top. Empty draw piles recycle the buried cards, preserving stack tops and travelled progress. Ten five-card stacks reach Oregon; at least one survivor means everyone wins.
+The trail continues from the last card played, without piles or five-card milestones. Earlier cards recycle when the draw deck is empty, while their visits and outcomes remain visible. Fifty travelled cards reach Oregon; at least one survivor means everyone wins.
 
 ## Rivers and calamities
 
@@ -42,6 +42,8 @@ Supply remedies return supplies to the shop. Partial multi-card remedies remain 
 
 The 2017 rule sheet takes precedence over older printed text: notably the two-player supply deal, the 3/5 river clarification, and Town-only removal of Inadequate Grass. Duplicate grass/water cards remain active after killing the oxen; the resulting replacement requirement is displayed as a separate wagon calamity rather than taking a physical Dead Oxen card from the draw pile.
 
-The rule sheet does not specify what to do if all 32 Calamity cards are exhausted. This app reshuffles remedied/discarded calamities; if none are available, that draw has no effect. This is an explicit digital fallback, not a published rule. Town/Fort supply picks may be declined when the shop cannot provide what the player wants. All fifth-card instructions resolve before stacking and winning. On-screen hands show only the current player’s supplies; players sharing the device must respect that information boundary themselves.
+The rule sheet does not specify what to do if all 32 Calamity cards are exhausted. This app reshuffles remedied/discarded calamities; if none are available, that draw has no effect. This is an explicit digital fallback, not a published rule. Town/Fort supply picks may be declined when the shop cannot provide what the player wants. All effects of the fiftieth card resolve before winning. On-screen hands show only the current player’s supplies; players sharing the device must respect that information boundary themselves.
 
 The previous solo “16 cards / party spirit / automatic provisions” save format is incompatible and is not loaded. The corrected game saves under a separate browser key.
+
+The digital trail is continuous: every card connects to the last card played. Five-card piles and milestones are omitted. Earlier physical cards recycle when the deck is empty; immutable visit snapshots keep the complete trail visible.
