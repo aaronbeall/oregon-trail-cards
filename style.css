@@ -945,7 +945,8 @@ button:disabled {
 .hazard {
   padding: 12px;
   background: #a26c5610;
-  border-left: 2px solid #a26c56;
+  border: 1px solid #a26c5635;
+  border-radius: 4px;
 }
 .hazard > strong {
   font:
@@ -3227,4 +3228,154 @@ button.wagon-condition:focus-visible {
     monospace;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+}
+
+/* Pending actions read as complete cards, with artwork and a clear action row. */
+.turn-state .hazard {
+  --action-wash: #a26c5610;
+  --action-line: #a26c5638;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px 16px;
+  padding: 14px;
+  border: 1px solid var(--action-line);
+  background: var(--action-wash);
+  box-shadow: 0 2px 3px #41483b08;
+}
+.turn-state .hazard-wagon {
+  --action-wash: #aa8b4f16;
+  --action-line: #aa8b4f45;
+}
+.turn-state .hazard-personal {
+  --action-wash: #a26c5616;
+  --action-line: #a26c5645;
+}
+.turn-state .hazard.has-art {
+  grid-template-columns: 112px minmax(0, 1fr);
+}
+.turn-state .hazard-art {
+  float: none;
+  grid-column: 1;
+  grid-row: 1 / 4;
+  width: 112px;
+  max-width: none;
+  height: 112px;
+  aspect-ratio: 1;
+  margin: 0;
+  border-radius: 3px;
+}
+.turn-state .hazard.has-art > :not(.hazard-art):not(.choices) {
+  grid-column: 2;
+}
+.turn-state .hazard > strong {
+  align-self: center;
+  font-size: 18px;
+}
+.turn-state .hazard > p {
+  margin: 0;
+  line-height: 1.65;
+}
+.turn-state .hazard > span {
+  margin: 0;
+}
+.turn-state .hazard .hazard-timing:not(:empty) {
+  display: inline-block;
+  padding: 3px 6px;
+  background: #f6eed89c;
+  border-radius: 3px;
+}
+.turn-state .hazard > .choices {
+  grid-column: 1 / -1;
+  justify-content: flex-end;
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid var(--action-line);
+}
+.turn-state .hazard::after {
+  display: none;
+}
+.turn-state > .action-summary:has(h3),
+.turn-state > .action-summary:has(.action-artwork) {
+  padding: 14px;
+  border: 1px solid #69745b38;
+  border-radius: 4px;
+  background: #69745b0d;
+}
+.turn-state[data-phase="river"] > .action-summary {
+  background: #56808012;
+  border-color: #56808040;
+}
+.turn-state[data-phase="repair"] > .action-summary {
+  background: #a26c5616;
+  border-color: #a26c5645;
+}
+.turn-state[data-phase="town"] > .action-summary,
+.turn-state[data-phase="fort"] > .action-summary {
+  background: #aa8b4f16;
+  border-color: #aa8b4f45;
+}
+.turn-state > .action-summary .action-artwork {
+  width: 112px;
+  height: 100px;
+  object-fit: cover;
+}
+@media (max-width: 500px) {
+  .turn-state .hazard.has-art {
+    grid-template-columns: 76px minmax(0, 1fr);
+    gap: 8px 12px;
+  }
+  .turn-state .hazard-art {
+    width: 76px;
+    height: 90px;
+  }
+  .turn-state .hazard > strong {
+    font-size: 16px;
+  }
+  .turn-state > .action-summary .action-artwork {
+    width: 76px;
+    height: 90px;
+  }
+}
+
+.wagon-condition-list {
+  gap: 8px;
+}
+button.wagon-condition {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 155px;
+  max-width: 100%;
+  padding: 7px 10px 7px 7px;
+  border: 1px solid #a88c5a42;
+  border-radius: 4px;
+  background: #aa8b4f12;
+  box-shadow: 0 2px 3px #41483b08;
+}
+button.wagon-condition img {
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  border-radius: 3px;
+}
+button.wagon-condition > span {
+  font:
+    14px Georgia,
+    serif;
+}
+button.wagon-condition small {
+  margin-top: 5px;
+  font:
+    9px "Courier New",
+    monospace;
+}
+button.wagon-condition:hover,
+button.wagon-condition:focus-visible {
+  background: #aa8b4f24;
+  border-color: #9a81566b;
+  outline: none;
+}
+button.wagon-condition:focus-visible {
+  outline: 2px solid var(--sage);
+  outline-offset: 2px;
 }

@@ -215,17 +215,22 @@ async function flyPickup(
   supply?: Supply,
 ) {
   const from = source.getBoundingClientRect();
-  const targetRect = target.getBoundingClientRect();
-  const size = Math.min(targetRect.width, targetRect.height, 36);
-  const to = supply
-    ? {
-        width: size,
-        height: size,
-        left: targetRect.left + (targetRect.width - size) / 2,
-        top: targetRect.top + (targetRect.height - size) / 2,
-      }
-    : targetRect;
-  if (!from.width || !to.width) return;
+  const landingRect = () => {
+    const rect = target.getBoundingClientRect();
+    const size = Math.min(rect.width, rect.height, 36);
+    return supply
+      ? {
+          width: size,
+          height: size,
+          left: rect.left + (rect.width - size) / 2,
+          top: rect.top + (rect.height - size) / 2,
+        }
+      : rect;
+  };
+  if (!from.width || !landingRect().width) return;
+  const startScroll = { x: window.scrollX, y: window.scrollY };
+  const landingStyle = getComputedStyle(target);
+  const border = supply ? 0 : parseFloat(landingStyle.borderLeftWidth) || 0;
   const token = document.createElement("template");
   if (supply) token.innerHTML = supplyEmblem(supply);
   const copy = (
@@ -244,6 +249,10 @@ async function flyPickup(
     zIndex: "1000",
     pointerEvents: "none",
     transformOrigin: "0 0",
+    boxSizing: "border-box",
+    aspectRatio: "auto",
+    border: `0px solid ${landingStyle.borderLeftColor}`,
+    background: supply ? "transparent" : landingStyle.backgroundColor,
   });
   document.body.append(copy);
   const destination = target as HTMLElement;
@@ -252,17 +261,31 @@ async function flyPickup(
     destination.style.visibility = "hidden";
     origin.style.visibility = "hidden";
   }
+  const flight = { progress: 0 };
+  const positionFlight = () => {
+    const to = landingRect();
+    const p = flight.progress;
+    const startLeft = from.left - (window.scrollX - startScroll.x);
+    const startTop = from.top - (window.scrollY - startScroll.y);
+    Object.assign(copy.style, {
+      left: `${startLeft + (to.left - startLeft) * p}px`,
+      top: `${startTop + (to.top - startTop) * p}px`,
+      width: `${from.width + (to.width - from.width) * p}px`,
+      height: `${from.height + (to.height - from.height) * p}px`,
+      borderWidth: `${border * p}px`,
+    });
+  };
+  window.addEventListener("scroll", positionFlight, true);
+  window.addEventListener("resize", positionFlight);
   try {
     await playTimeline((tl) => {
       tl.to(
-        copy,
+        flight,
         {
-          x: to.left - from.left,
-          y: to.top - from.top,
-          scaleX: to.width / from.width,
-          scaleY: to.height / from.height,
+          progress: 1,
           duration: 0.48,
           ease: "power2.inOut",
+          onUpdate: positionFlight,
         },
         0,
       );
@@ -285,7 +308,9 @@ async function flyPickup(
       );
       const positions = remaining.map((node) => node.getBoundingClientRect());
       playedHandCard.remove();
+      positionFlight();
       await playTimeline((tl) => {
+        tl.eventCallback("onUpdate", positionFlight);
         remaining.forEach((node, i) => {
           const after = node.getBoundingClientRect();
           const x = positions[i].left - after.left;
@@ -307,6 +332,9 @@ async function flyPickup(
       });
     }
   } finally {
+    positionFlight();
+    window.removeEventListener("scroll", positionFlight, true);
+    window.removeEventListener("resize", positionFlight);
     copy.remove();
     destination.style.removeProperty("visibility");
     origin.style.removeProperty("visibility");
@@ -447,7 +475,11 @@ const wagonKinds = new Set<Hazard["kind"]>([
 function playerCalamities() {
   const s = game.state;
   if (s.status !== "travel" || s.phase === "legacy") return "";
-  const shared = s.hazards.filter((h) => wagonKinds.has(h.kind));
+  const shared = s.hazards.filter(
+    (h) =>
+      wagonKinds.has(h.kind) &&
+      Object.values(h.needs).some((count) => count! > 0),
+  );
   const personal = s.hazards.filter((h) => !wagonKinds.has(h.kind));
   const own = personal.filter((h) => h.owner === s.current);
   const companions = personal.filter((h) => h.owner !== s.current);
@@ -511,15 +543,15 @@ function actionArtwork(): SceneArt | undefined {
     return { src: art[s.phase], alt: `A welcoming frontier ${s.phase}` };
   if (s.phase === "discard")
     return { src: calamityArt.thief, alt: "A thief taking a supply" };
-  const breakdown = s.hazards.find((h) =>
-    ["axle", "tongue", "wheel", "oxen"].includes(h.kind),
-  );
-  if (breakdown)
-    return { src: wagonArt[breakdown.kind]!, alt: titles[breakdown.kind] };
 }
 function journeyArtwork(): SceneArt {
   const action = actionArtwork();
   if (action) return action;
+  const breakdown = game.state.hazards.find((h) =>
+    ["axle", "tongue", "wheel", "oxen"].includes(h.kind),
+  );
+  if (breakdown)
+    return { src: wagonArt[breakdown.kind]!, alt: titles[breakdown.kind] };
   const condition = game.state.hazards.find((h) => wagonKinds.has(h.kind));
   if (condition)
     return { src: wagonArt[condition.kind]!, alt: titles[condition.kind] };
@@ -570,7 +602,7 @@ function hazards(
   return conditions
     .map(
       (h) =>
-        `<article class="hazard" data-ui-key="hazard-${h.id}">${showArtwork && calamityArt[h.kind] ? `<img class="hazard-art" src="${calamityArt[h.kind]}" alt="${titles[h.kind]}">` : ""}<strong class="condition-heading">${conditionPortrait(h.kind, h.owner)}<span>${escape(conditionTitle(h.kind, h.owner))}</span></strong>${showDescription ? `<p>${escape(remedyDescription(h))}</p>` : ""}<span><span class="hazard-timing">${h.rounds === null ? "" : `${h.rounds} round${h.rounds === 1 ? "" : "s"} left`}${h.skip ? `${h.rounds === null ? "" : " · "}rests ${h.skip} turn${h.skip === 1 ? "" : "s"}` : ""}</span></span><div class="choices">${(
+        `<article class="hazard ${wagonKinds.has(h.kind) ? "hazard-wagon" : "hazard-personal"} ${showArtwork ? "has-art" : ""}" data-ui-key="hazard-${h.id}">${showArtwork && calamityArt[h.kind] ? `<img class="hazard-art" src="${calamityArt[h.kind]}" alt="${titles[h.kind]}">` : ""}<strong class="condition-heading">${conditionPortrait(h.kind, h.owner)}<span>${escape(conditionTitle(h.kind, h.owner))}</span></strong>${showDescription ? `<p>${escape(remedyDescription(h))}</p>` : ""}<span><span class="hazard-timing">${h.rounds === null ? "" : `${h.rounds} round${h.rounds === 1 ? "" : "s"} left`}${h.skip ? `${h.rounds === null ? "" : " · "}rests ${h.skip} turn${h.skip === 1 ? "" : "s"}` : ""}</span></span><div class="choices">${(
           Object.keys(h.needs) as Supply[]
         )
           .filter((k) => h.needs[k]! > 0)
@@ -815,7 +847,7 @@ function decision() {
               ? "No trail card connects. Use a supply to remedy a calamity, or draw one card and end your turn."
               : "No trail card connects. Draw one card and end your turn.";
   }
-  return `<section class="decision" aria-live="polite"><p class="eyebrow">${s.status === "travel" ? `Turn ${s.turn}` : "Journey’s end"}</p><div class="turn-header" data-turn-player="${s.phase === "legacy" ? s.deaths[0] : s.current}"><div class="decision-heading">${portraitImage(s.players[s.phase === "legacy" ? s.deaths[0] : s.current].portrait ?? 0, true)}<h2>${s.phase === "legacy" ? `Farewell, ${escape(s.players[s.deaths[0]].name)}.` : `${escape(p.name)}’s turn`}</h2></div>${s.status === "travel" && s.phase !== "legacy" ? playerSupplies() : ""}</div><div class="turn-state-window"><div class="turn-state" data-ui-key="turn-state"><div class="action-summary">${s.phase !== "legacy" && actionArtwork() ? `<img class="action-artwork" src="${actionArtwork()!.src}" alt="${escape(actionArtwork()!.alt)}">` : ""}<div class="action-copy" data-ui-key="action-copy">${heading ? `<h3>${heading}</h3>${s.phase === "river" ? riverFailureTag(!!game.top?.deadly) : ""}` : ""}<p><span class="decision-text">${escape(text)}</span></p></div></div><div class="choices">${choices}</div>${playerCalamities()}</div></div></section>`;
+  return `<section class="decision" aria-live="polite"><p class="eyebrow">${s.status === "travel" ? `Turn ${s.turn}` : "Journey’s end"}</p><div class="turn-header" data-turn-player="${s.phase === "legacy" ? s.deaths[0] : s.current}"><div class="decision-heading">${portraitImage(s.players[s.phase === "legacy" ? s.deaths[0] : s.current].portrait ?? 0, true)}<h2>${s.phase === "legacy" ? `Farewell, ${escape(s.players[s.deaths[0]].name)}.` : `${escape(p.name)}’s turn`}</h2></div>${s.status === "travel" && s.phase !== "legacy" ? playerSupplies() : ""}</div><div class="turn-state-window"><div class="turn-state" data-ui-key="turn-state" data-phase="${s.phase}"><div class="action-summary">${s.phase !== "legacy" && actionArtwork() ? `<img class="action-artwork" src="${actionArtwork()!.src}" alt="${escape(actionArtwork()!.alt)}">` : ""}<div class="action-copy" data-ui-key="action-copy">${heading ? `<h3>${heading}</h3>${s.phase === "river" ? riverFailureTag(!!game.top?.deadly) : ""}` : ""}<p><span class="decision-text">${escape(text)}</span></p></div></div><div class="choices">${choices}</div>${playerCalamities()}</div></div></section>`;
 }
 function reportFor(c: TrailCard) {
   return c.journeyStep ? game.state.trailReports?.[c.journeyStep] : undefined;
@@ -1012,6 +1044,81 @@ function restoreTimelineOwners() {
     });
   }
 }
+function timelineConditionTitle(kind: Calamity, owner: number) {
+  return conditionTitle(kind, owner)
+    .replace(" suffered a snakebite", " suffers a snakebite")
+    .replace(" died of ", " dies of ")
+    .replace(" went hunting", " goes hunting")
+    .replace("A thief stole from ", "A thief steals from ");
+}
+function timelineRemedy(kind: Calamity, owner?: number) {
+  if (owner === undefined || wagonKinds.has(kind))
+    return `${titles[kind]} is remedied.`;
+  const name = game.state.players[owner].name;
+  return kind === "starvation"
+    ? `${name} has food again.`
+    : kind === "cold"
+      ? `${name} is warm again.`
+      : `${name} recovers from ${kind === "arm" ? "a broken arm" : titles[kind]}.`;
+}
+function timelineDescription(
+  report: TrailReport | undefined,
+  card?: TrailCard,
+) {
+  if (card?.type === "river") {
+    if (report?.scene === "success")
+      return `The wagon reaches the far bank after ${report.attempts ?? 1} crossing attempt${report.attempts === 1 || !report.attempts ? "" : "s"}.`;
+    if (report?.attempts)
+      return "The crossing fails. The wagon remains on this bank of the river.";
+    return card.deadly
+      ? "A raging river blocks the trail. The current threatens the travellers."
+      : "A river blocks the trail. The wagon waits at the bank.";
+  }
+  const kind = report?.calamity;
+  if (kind) {
+    const wagon: Partial<Record<Calamity, string>> = {
+      axle: "The axle breaks, bringing the wagon to a halt.",
+      tongue: "The wagon tongue breaks. The wagon cannot move.",
+      wheel: "A wheel breaks, bringing the wagon to a halt.",
+      oxen: "The oxen die. The wagon has no team to pull it.",
+      water: "The wagon’s water is unsafe to drink.",
+      grass: "Grazing is scarce. There is not enough grass for the oxen.",
+    };
+    if (
+      kind === "grass" &&
+      report.results?.some(
+        (text) =>
+          text.includes("second inadequate-grass") ||
+          text.includes("second grass"),
+      )
+    )
+      return "There is still not enough grass. The oxen die, and the wagon comes to a halt.";
+    if (wagon[kind]) return wagon[kind]!;
+    if (kind === "hunting")
+      return Object.values(report.gains).some((count) => count > 0)
+        ? "The hunt brings fresh food back to the wagon."
+        : "The hunt brings no food back to the wagon.";
+    if (kind === "thief") return "A thief strikes the wagon’s supplies.";
+    if (report.owner !== undefined) {
+      const name = game.state.players[report.owner].name;
+      const death = report.deaths.find((death) => death.name === name);
+      if (death) return `${name} dies of ${death.cause.toLowerCase()}.`;
+      return `${timelineConditionTitle(kind, report.owner)}.`;
+    }
+    return `${titles[kind]} strikes the wagon party.`;
+  }
+  if (card?.type === "town" || card?.type === "fort") {
+    const count = Object.values(report?.gains ?? {}).reduce(
+      (sum, n) => sum + n,
+      0,
+    );
+    const location = label(card);
+    return count
+      ? `At ${location}, ${report?.gainOwner !== undefined ? game.state.players[report.gainOwner].name : "the party"} packs ${count} new suppl${count === 1 ? "y" : "ies"}.`
+      : `The wagon reaches ${location}, a welcome stop along the trail.`;
+  }
+  return "The wagon follows a quiet stretch of trail.";
+}
 function trailReportTitle(report: TrailReport | undefined, c?: TrailCard) {
   if (report && (c?.type === "river" || report.card?.type === "river")) {
     if (
@@ -1031,13 +1138,16 @@ function trailReportTitle(report: TrailReport | undefined, c?: TrailCard) {
     )
       return "River crossing failed";
   }
+  if (report?.calamity && wagonKinds.has(report.calamity))
+    return titles[report.calamity];
   if (report?.calamity && !wagonKinds.has(report.calamity)) {
     const owner =
       report.owner ??
       game.state.hazards.find(
         (h) => h.kind === report.calamity && h.trailStep === c?.journeyStep,
       )?.owner;
-    if (owner !== undefined) return conditionTitle(report.calamity, owner);
+    if (owner !== undefined)
+      return timelineConditionTitle(report.calamity, owner);
   }
   return report?.title ?? (c ? label(c) : "Earlier trail");
 }
@@ -1062,7 +1172,7 @@ function trailOutcomes(reports: TrailReport[]) {
     .map(({ name, cause }) => ({
       owner: game.state.players.findIndex((p) => p.name === name),
       icon: `<img src="${art.tombstoneIcon}" alt="">`,
-      description: `${name} ${cause.toLowerCase().startsWith("drowned") ? cause.toLowerCase() : `died of ${cause.toLowerCase()}`}${game.state.players.find((p) => p.name === name)?.deathDate ? ` on ${calendarDate(game.state.players.find((p) => p.name === name)!.deathDate!)} (${game.state.players.find((p) => p.name === name)!.deathDay} days on the trail)` : ""}`,
+      description: `${name} ${cause.toLowerCase().startsWith("drowned") ? cause.toLowerCase().replace("drowned", "drowns") : `dies of ${cause.toLowerCase()}`}${game.state.players.find((p) => p.name === name)?.deathDate ? ` on ${calendarDate(game.state.players.find((p) => p.name === name)!.deathDate!)} (${game.state.players.find((p) => p.name === name)!.deathDay} days on the trail)` : ""}`,
     }));
   reports
     .flatMap((report) =>
@@ -1085,7 +1195,7 @@ function trailOutcomes(reports: TrailReport[]) {
       items.push({
         owner,
         icon: `<img class="outcome-image" src="${calamityArt[kind]}" alt="">`,
-        description: remedyTitle(kind, owner),
+        description: timelineRemedy(kind, owner),
       }),
     );
   reports
@@ -1094,7 +1204,7 @@ function trailOutcomes(reports: TrailReport[]) {
       items.push({
         owner: player,
         icon: lostSupplyEmblem(supply),
-        description: `${game.state.players[player].name} used ${names[supply].toLowerCase()} to remedy ${titles[kind].toLowerCase()}.`,
+        description: `${game.state.players[player].name} uses ${names[supply].toLowerCase()} to remedy ${titles[kind].toLowerCase()}.`,
       }),
     );
   reports
@@ -1110,7 +1220,7 @@ function trailOutcomes(reports: TrailReport[]) {
         icon: lostSupplyEmblem(kind),
         description:
           owner !== undefined
-            ? `${game.state.players[owner].name} lost ${names[kind].toLowerCase()}`
+            ? `${game.state.players[owner].name} loses ${names[kind].toLowerCase()}`
             : `${names[kind]} lost`,
       }),
     );
@@ -1125,7 +1235,7 @@ function trailOutcomes(reports: TrailReport[]) {
         items.push({
           owner: report.gainOwner ?? report.owner,
           icon: supplyEmblem(kind),
-          description: `${count} ${names[kind].toLowerCase()} gained`,
+          description: `${report.gainOwner !== undefined ? game.state.players[report.gainOwner].name : "The party"} gains ${count} ${names[kind].toLowerCase()}`,
         }),
     ),
   );
@@ -1198,14 +1308,17 @@ function playerPreviewContent(row: HTMLElement) {
 }
 function showOutcomeTooltip(row: HTMLElement) {
   if (tooltipOwner !== row) tooltipPinned = false;
+  const isIcon =
+    row.classList.contains("trail-outcome") ||
+    row.classList.contains("trail-afflicted");
   const isStart = row.classList.contains("trail-start");
   const isTile = isStart || row.classList.contains("trail-piece");
   const outcomes = isTile
     ? row.querySelector<HTMLElement>(".trail-outcomes")
     : row;
-  const descriptions = JSON.parse(
-    outcomes?.dataset.outcomeDescriptions ?? "[]",
-  ) as string[];
+  const descriptions = isIcon
+    ? [row.getAttribute("aria-label") ?? ""]
+    : (JSON.parse(outcomes?.dataset.outcomeDescriptions ?? "[]") as string[]);
   const results = isTile
     ? (JSON.parse(row.dataset.trailResults ?? "[]") as string[]).slice(-1)
     : [];
@@ -1216,12 +1329,14 @@ function showOutcomeTooltip(row: HTMLElement) {
   tooltipOwner?.removeAttribute("aria-describedby");
   tooltipOwner = row;
   row.setAttribute("aria-describedby", outcomeTooltip.id);
-  const icons = Array.from(
-    outcomes?.querySelectorAll<HTMLElement>(".trail-outcome") ?? [],
-  );
+  const icons = isIcon
+    ? [row]
+    : Array.from(
+        outcomes?.querySelectorAll<HTMLElement>(".trail-outcome") ?? [],
+      );
   outcomeTooltip.innerHTML =
     playerPreviewContent(row) ??
-    `<strong class="tooltip-title">${isTile ? (row.querySelector(".trail-afflicted")?.innerHTML ?? "") : ""}<span>${escape(title)}</span></strong>${results.length ? `<div class="tooltip-results">${results.map((text) => `<p>${escape(text)}</p>`).join("")}</div>` : ""}<ul>${descriptions
+    `${isIcon ? "" : `<strong class="tooltip-title">${isTile ? (row.querySelector(".trail-afflicted")?.innerHTML ?? "") : ""}<span>${escape(title)}</span></strong>`}${results.length ? `<div class="tooltip-results">${results.map((text) => `<p>${escape(text)}</p>`).join("")}</div>` : ""}<ul>${descriptions
       .map((text, index) => {
         const icon = icons[index];
         const owner = icon?.dataset.outcomeOwner;
@@ -1252,7 +1367,7 @@ function showOutcomeTooltip(row: HTMLElement) {
 app.addEventListener("mouseover", (event) => {
   if (tooltipPinned) return;
   const row = (event.target as Element).closest<HTMLElement>(
-    ".trail-outcomes, .trail-piece, .trail-start, [data-player-preview], [data-wagon-preview]",
+    ".trail-outcome, .trail-afflicted, .trail-piece, .trail-start, [data-player-preview], [data-wagon-preview]",
   );
   if (row && row !== tooltipOwner) showOutcomeTooltip(row);
 });
@@ -1271,14 +1386,14 @@ outcomeTooltip.addEventListener("mouseleave", () => {
 });
 app.addEventListener("focusin", (event) => {
   const row = (event.target as Element).closest<HTMLElement>(
-    ".trail-outcomes, .trail-piece, .trail-start, [data-player-preview], [data-wagon-preview]",
+    ".trail-outcome, .trail-afflicted, .trail-piece, .trail-start, [data-player-preview], [data-wagon-preview]",
   );
   if (row) showOutcomeTooltip(row);
   else hideOutcomeTooltip();
 });
 app.addEventListener("click", (event) => {
   const row = (event.target as Element).closest<HTMLElement>(
-    ".trail-outcomes, .trail-piece, .trail-start, [data-player-preview], [data-wagon-preview]",
+    ".trail-outcome, .trail-afflicted, .trail-piece, .trail-start, [data-player-preview], [data-wagon-preview]",
   );
   if (!row) {
     hideOutcomeTooltip();
@@ -1298,7 +1413,7 @@ document.addEventListener("pointerdown", (event) => {
   const target = event.target as Element;
   if (
     !target.closest(
-      ".trail-outcomes, .trail-piece, .trail-start, [data-player-preview], [data-wagon-preview]",
+      ".trail-outcome, .trail-afflicted, .trail-piece, .trail-start, [data-player-preview], [data-wagon-preview]",
     ) &&
     !outcomeTooltip.contains(target)
   )
@@ -1398,7 +1513,7 @@ function recordTrailResult(
   }
   if (repairRoll) {
     const n = pendingRolls.at(-1)!;
-    report.title = `${titles[repairKind!]}${n >= 4 ? " · repaired" : " · repair failed"} (${n})`;
+    report.title = titles[repairKind!];
     report.calamity = repairKind ?? undefined;
     if (n >= 4) {
       report.scene = "restored";
@@ -1489,8 +1604,8 @@ function trailPlayerBadge(report?: TrailReport) {
     return "";
   const player = game.state.players[report.owner];
   if (!player) return "";
-  const text = conditionTitle(report.calamity, report.owner);
-  return `<button type="button" class="trail-afflicted" aria-label="${escape(text)}" title="${escape(text)}">${portraitImage(player.portrait ?? report.owner % 6)}</button>`;
+  const text = timelineConditionTitle(report.calamity, report.owner);
+  return `<button type="button" class="trail-afflicted" aria-label="${escape(text)}">${portraitImage(player.portrait ?? report.owner % 6)}</button>`;
 }
 function trail() {
   const s = game.state;
@@ -1504,7 +1619,7 @@ function trail() {
         (c.journeyStep ?? s.count - s.run.length + offset + 1) === step,
     );
     const c = report?.card ?? fallback;
-    return `<div class="trail-piece ${step === activeStep && s.status === "travel" ? "active-connection" : ""}" data-ui-key="trail-step-${step}" tabindex="0" data-trail-results="${escape(JSON.stringify(report?.results ?? []))}" aria-label="Trail card ${step}${step === activeStep ? ", active connection" : ""}">${c ? card(c, reportArtwork(report, c)) : `<div class="earlier-trail"><img src="${art.trail}" alt="Earlier stretch of trail"></div>`}${trailPlayerBadge(report)}<small>${escape(trailReportTitle(report, c))}</small>${trailOutcomes(report ? [report] : [])}</div>`;
+    return `<div class="trail-piece ${step === activeStep && s.status === "travel" ? "active-connection" : ""}" data-ui-key="trail-step-${step}" tabindex="0" data-trail-results="${escape(JSON.stringify([timelineDescription(report, c)]))}" aria-label="Trail card ${step}${step === activeStep ? ", active connection" : ""}">${c ? card(c, reportArtwork(report, c)) : `<div class="earlier-trail"><img src="${art.trail}" alt="Earlier stretch of trail"></div>`}${trailPlayerBadge(report)}<small>${escape(trailReportTitle(report, c))}</small>${trailOutcomes(report ? [report] : [])}</div>`;
   }).join("");
   return `<section class="trail-area" aria-label="Journey trail"><div class="section-line"><h2>The trail so far</h2><span class="journey-calendar">${calendarDate(journeyDate(s.turn - 1, s.startDate))} · ${s.turn - 1} day${s.turn === 2 ? "" : "s"} on the trail</span><button class="trail-return" data-action="trail-end" aria-label="Back to end of trail" title="Back to end of trail" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12h12m-5-5 5 5-5 5M20 5v14"/></svg></button></div><div class="map-track" data-ui-static role="progressbar" aria-label="Journey progress" aria-valuemin="0" aria-valuemax="50" aria-valuenow="${s.count}"><span style="width:${s.count * 2}%"><img class="progress-wagon" src="${art.progressWagon}" alt="" aria-hidden="true"></span></div><div class="trail-body"><div class="trail-route"><div class="trail-strip"><div class="trail-start" data-ui-key="trail-start" tabindex="0" data-trail-results="${escape(JSON.stringify(["Your journey begins in Independence, Missouri. The wagon is packed, the kettle is rattling, and Oregon waits at the far end of fifty trail cards."]))}" aria-label="Journey starts in Independence, Missouri"><div class="start-art"><img src="${art.independence}" alt="A wagon departing the frontier town of Independence"><span class="start-badge">START</span></div><strong>Independence</strong><small>Missouri</small></div>${entries}<div class="trail-marker ${s.status === "won" ? "arrived" : ""}" data-ui-key="trail-finish" style="--finish-progress:${s.count / 50};--finish-dots:${Math.ceil((50 - s.count) / 5)}" aria-label="${s.status === "won" ? "Arrived in Oregon" : "Destination: Oregon"}"><div class="finish-destination"><div class="finish-art"><img src="${art.landscape}" alt="Quiet hills and a wagon at the journey’s destination"><span class="finish-badge"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 14V2m0 0h9l-2 3 2 3H3"/></svg>${s.status === "won" ? "ARRIVED" : "FINISH"}</span></div><strong>Oregon</strong><small>Willamette Valley</small></div></div></div></div>${wagonState()}</div></section>`;
 }
@@ -2199,19 +2314,19 @@ async function revealJourneyEnd() {
     won ? "journey-victory" : "journey-defeat",
   );
   overlay.panel.innerHTML = `<div class="finale-art"><img src="${won ? art.victory : art.defeat}" alt="${won ? "A wagon arrives at a welcoming Oregon homestead" : "An abandoned wagon and grave markers on the quiet prairie"}"></div><div class="finale-copy"><span class="finale-eyebrow">${won ? "Journey complete" : "Journey’s end"}</span><h2>${title}</h2><p>${escape(description)}</p>${!won && survivors.length ? `<p class="finale-cause">${escape(s.note)}</p>` : ""}<div class="finale-stats"><span><strong>${days}</strong>day${days === 1 ? "" : "s"} on the trail</span><span><strong>${s.count} / 50</strong>trail cards</span><span><strong>${survivors.length} / ${s.players.length}</strong>travellers remaining</span></div><div class="finale-party">${s.players.map((p, index) => `<div class="finale-traveller ${p.alive ? "" : "fallen"}">${p.alive ? portraitImage(p.portrait ?? index % 6) : `<img class="finale-grave" src="${art.tombstoneIcon}" alt="">`}<span>${escape(p.name)}</span>${!p.alive ? `<small>${escape(p.deathCause ?? "Lost on the trail")}</small>` : ""}</div>`).join("")}</div><button class="finale-continue" disabled>View journey →</button></div>`;
+  const artwork = overlay.panel.querySelector(".finale-art img")!;
+  const copy = overlay.panel.querySelector(".finale-copy")!;
+  if (!reducedMotion.matches) {
+    gsap.set(artwork, { scale: 1.08 });
+    gsap.set(copy, { opacity: 0, y: 14 });
+  }
   try {
     await overlay.show();
     if (!reducedMotion.matches)
       await playTimeline((tl) => {
-        tl.fromTo(
-          overlay.panel.querySelector(".finale-art img"),
-          { scale: 1.08 },
-          { scale: 1, duration: 1.1, ease: "power2.out" },
-          0,
-        );
-        tl.fromTo(
-          overlay.panel.querySelector(".finale-copy"),
-          { opacity: 0, y: 14 },
+        tl.to(artwork, { scale: 1, duration: 1.1, ease: "power2.out" }, 0);
+        tl.to(
+          copy,
           {
             opacity: 1,
             y: 0,
@@ -2799,6 +2914,22 @@ app.addEventListener("click", async (event) => {
       : undefined;
   rollContext.loss = automaticLoss;
   recordTrailResult(d, beforeResult, playedCard);
+  const grassKilledOxen =
+    playingCalamity &&
+    revealedCalamity === "grass" &&
+    game.state.hazards.some(
+      (h) =>
+        h.kind === "oxen" &&
+        h.virtual &&
+        !beforeResult.hazards.some((old) => old.id === h.id),
+    );
+  const deadOxenResult =
+    "The oxen have run out of grass—and road. A second inadequate-grass calamity has killed them. The wagon is stopped: give one Oxen supply within one round, or the journey ends.";
+  if (grassKilledOxen && playedCard?.journeyStep) {
+    game.state.trailReports?.[playedCard.journeyStep]?.results?.push(
+      deadOxenResult,
+    );
+  }
   const shouldScrollTrail =
     d.play !== undefined ||
     game.state.turn !== previousTurn ||
@@ -2916,6 +3047,13 @@ app.addEventListener("click", async (event) => {
         previousPlayer,
         automaticLoss,
       );
+    if (grassKilledOxen)
+      await revealActionResult({
+        encounter: true,
+        title: "Dead oxen",
+        image: calamityArt.oxen,
+        text: deadOxenResult,
+      });
     const hadDiceResult = pendingRolls.length > 0;
     for (const n of pendingRolls.splice(0)) await tumbleDie(n, rollContext);
     if (!playingCalamity && !hadDiceResult) {
