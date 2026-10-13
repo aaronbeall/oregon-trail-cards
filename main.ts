@@ -67,6 +67,8 @@ const escape = (s: string) =>
 const art = {
   town: new URL("./assets/town.webp", import.meta.url).href,
   independence: new URL("./assets/independence.webp", import.meta.url).href,
+  victory: new URL("./assets/journey-victory.webp", import.meta.url).href,
+  defeat: new URL("./assets/journey-defeat.webp", import.meta.url).href,
   progressWagon: new URL("./assets/progress-wagon.webp", import.meta.url).href,
   fort: new URL("./assets/fort.webp", import.meta.url).href,
   shop: new URL("./assets/shop.webp", import.meta.url).href,
@@ -210,11 +212,26 @@ async function flyPickup(
   source: Element,
   target: Element,
   playedHandCard?: HTMLElement,
+  supply?: Supply,
 ) {
   const from = source.getBoundingClientRect();
-  const to = target.getBoundingClientRect();
+  const targetRect = target.getBoundingClientRect();
+  const size = Math.min(targetRect.width, targetRect.height, 36);
+  const to = supply
+    ? {
+        width: size,
+        height: size,
+        left: targetRect.left + (targetRect.width - size) / 2,
+        top: targetRect.top + (targetRect.height - size) / 2,
+      }
+    : targetRect;
   if (!from.width || !to.width) return;
-  const copy = source.cloneNode(true) as HTMLElement;
+  const token = document.createElement("template");
+  if (supply) token.innerHTML = supplyEmblem(supply);
+  const copy = (
+    supply ? token.content.firstElementChild! : source.cloneNode(true)
+  ) as HTMLElement;
+  if (supply) copy.classList.add("supply-flight");
   copy.classList.add("pickup-flight");
   copy.setAttribute("aria-hidden", "true");
   Object.assign(copy.style, {
@@ -231,8 +248,10 @@ async function flyPickup(
   document.body.append(copy);
   const destination = target as HTMLElement;
   const origin = source as HTMLElement;
-  destination.style.visibility = "hidden";
-  origin.style.visibility = "hidden";
+  if (!supply) {
+    destination.style.visibility = "hidden";
+    origin.style.visibility = "hidden";
+  }
   try {
     await playTimeline((tl) => {
       tl.to(
@@ -346,7 +365,7 @@ function conditionDescription(kind: Calamity, owner: number) {
   return personal[kind] ?? hazardText[kind] ?? "";
 }
 function conditionPortrait(kind: Calamity, owner: number) {
-  return wagonKinds.has(kind) || owner === game.state.current
+  return wagonKinds.has(kind)
     ? ""
     : portraitImage(game.state.players[owner].portrait ?? owner % 6);
 }
@@ -440,7 +459,7 @@ function playerCard(index: number, turnPlayer = game.state.current) {
   const conditions = s.hazards.filter(
     (h) => h.owner === index && !wagonKinds.has(h.kind),
   );
-  return `<div data-ui-key="player-${index}" class="player ${index === turnPlayer ? "current" : ""} ${!p.alive ? "dead" : conditions.length ? "unwell" : ""}"><div class="player-heading">${portrait(index)}<div><strong>${escape(p.name)} ${!p.alive ? "†" : index === turnPlayer ? "←" : ""}</strong><small>${p.alive ? `<button class="player-count" data-player-preview="trail" data-player-index="${index}" aria-label="View ${escape(p.name)}’s trail cards">${p.hand.length} trail</button> · <button class="player-count" data-player-preview="supplies" data-player-index="${index}" aria-label="View ${escape(p.name)}’s supplies">${p.supplies.length} supplies</button>` : escape(p.epitaph)}</small></div></div><div class="player-state" aria-label="${escape(p.name)}’s condition">${(p.alive ? conditions : []).map((h) => `<button class="condition-status" style="--condition-art:url('${calamityArt[h.kind]}')" data-ui-key="condition-${h.id}" data-player-preview="condition" data-player-index="${index}" data-hazard-id="${h.id}" aria-label="${escape(conditionTitle(h.kind, index))}: condition and remedies"><span>${titles[h.kind]}</span></button>`).join("")}${p.alive && !conditions.length ? '<span class="condition-clear">In good health</span>' : ""}</div></div>`;
+  return `<div data-ui-key="player-${index}" class="player ${index === turnPlayer ? "current" : ""} ${!p.alive ? "dead" : conditions.length ? "unwell" : ""}"><div class="player-heading">${portrait(index)}<div><strong>${escape(p.name)} ${!p.alive ? "†" : index === turnPlayer ? '<span class="player-turn-tag">Turn</span>' : ""}</strong><small>${p.alive ? `<button class="player-count" data-player-preview="trail" data-player-index="${index}" aria-label="View ${escape(p.name)}’s trail cards">${p.hand.length} trail</button> · <button class="player-count" data-player-preview="supplies" data-player-index="${index}" aria-label="View ${escape(p.name)}’s supplies">${p.supplies.length} supplies</button>` : escape(p.epitaph)}</small></div></div><div class="player-state" aria-label="${escape(p.name)}’s condition">${(p.alive ? conditions : []).map((h) => `<button class="condition-status" style="--condition-art:url('${calamityArt[h.kind]}')" data-ui-key="condition-${h.id}" data-player-preview="condition" data-player-index="${index}" data-hazard-id="${h.id}" aria-label="${escape(conditionTitle(h.kind, index))}: condition and remedies"><span>${titles[h.kind]}</span></button>`).join("")}${p.alive && !conditions.length ? '<span class="condition-clear">In good health</span>' : ""}</div></div>`;
 }
 function refreshPlayerSummaries(turnPlayer: number) {
   const summaries = app.querySelector(".players");
@@ -565,6 +584,7 @@ function hazards(
     )
     .join("");
 }
+let willPanel: HTMLElement | undefined;
 let willDraftOwner = -1;
 let willDraft = new Map<number, number>();
 let selectedWillSupply: number | null = null;
@@ -600,7 +620,7 @@ function willEditor() {
     )}</div></div><div class="will-footer"><span class="will-status" role="status">${willMessage || `${willDraft.size} / ${2 - s.legacyCount} supplies chosen`}</span>${button("will-supplies", "Will supplies")}</div></div>`;
 }
 function updateWillDraft() {
-  const editor = app.querySelector(".will-editor");
+  const editor = (willPanel ?? app).querySelector(".will-editor");
   if (!editor) return;
   const template = document.createElement("template");
   template.innerHTML = willEditor();
@@ -608,7 +628,11 @@ function updateWillDraft() {
 }
 function assignWillSupply(index: number, recipient?: number) {
   const s = game.state;
-  if (busy || s.phase !== "legacy" || !s.players[s.deaths[0]].supplies[index])
+  if (
+    (busy && !willPanel) ||
+    s.phase !== "legacy" ||
+    !s.players[s.deaths[0]].supplies[index]
+  )
     return;
   willMessage = "";
   if (recipient === undefined) willDraft.delete(index);
@@ -622,11 +646,11 @@ function assignWillSupply(index: number, recipient?: number) {
   updateWillDraft();
 }
 let draggingWillSupply: number | null = null;
-app.addEventListener("dragstart", (event) => {
+document.addEventListener("dragstart", (event) => {
   const chip = (event.target as Element).closest<HTMLElement>(
     "[data-will-item]",
   );
-  if (!chip || busy) return;
+  if (!chip || (busy && !willPanel)) return;
   draggingWillSupply = Number(chip.dataset.willItem);
   event.dataTransfer?.setData(
     "application/x-oregon-will",
@@ -634,16 +658,16 @@ app.addEventListener("dragstart", (event) => {
   );
   if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
 });
-app.addEventListener("dragover", (event) => {
+document.addEventListener("dragover", (event) => {
   const zone = (event.target as Element).closest(".will-drop-zone");
-  if (!zone || draggingWillSupply === null || busy) return;
+  if (!zone || draggingWillSupply === null || (busy && !willPanel)) return;
   event.preventDefault();
-  app
+  document
     .querySelectorAll(".will-drop-zone.drag-over")
     .forEach((el) => el.classList.remove("drag-over"));
   zone.classList.add("drag-over");
 });
-app.addEventListener("drop", (event) => {
+document.addEventListener("drop", (event) => {
   const zone = (event.target as Element).closest<HTMLElement>(
     ".will-drop-zone",
   );
@@ -656,18 +680,18 @@ app.addEventListener("drop", (event) => {
       : Number(zone.dataset.willRecipient),
   );
   draggingWillSupply = null;
-  app
+  document
     .querySelectorAll(".drag-over")
     .forEach((el) => el.classList.remove("drag-over"));
 });
-app.addEventListener("dragend", () => {
+document.addEventListener("dragend", () => {
   draggingWillSupply = null;
-  app
+  document
     .querySelectorAll(".drag-over")
     .forEach((el) => el.classList.remove("drag-over"));
 });
-app.addEventListener("click", (event) => {
-  if (busy || game.state.phase !== "legacy") return;
+document.addEventListener("click", (event) => {
+  if ((busy && !willPanel) || game.state.phase !== "legacy") return;
   const target = event.target as Element;
   const chip = target.closest<HTMLElement>("[data-will-item]");
   const zone = target.closest<HTMLElement>(".will-drop-zone");
@@ -685,7 +709,7 @@ app.addEventListener("click", (event) => {
         : Number(zone.dataset.willRecipient),
     );
 });
-app.addEventListener("keydown", (event) => {
+document.addEventListener("keydown", (event) => {
   const zone = event.target as HTMLElement;
   if (zone.matches(".will-drop-zone") && ["Enter", " "].includes(event.key)) {
     event.preventDefault();
@@ -760,7 +784,7 @@ function decision() {
     heading = "";
     text =
       "Leave up to two supplies to your companions. The rest return to the shop.";
-    choices = `<div class="legacy-layout">${memorial(s.deaths[0])}${willEditor()}</div>`;
+    choices = "";
   } else {
     heading = "";
     const canRemedy = s.hazards.some((h) =>
@@ -796,7 +820,9 @@ function decision() {
 function reportFor(c: TrailCard) {
   return c.journeyStep ? game.state.trailReports?.[c.journeyStep] : undefined;
 }
-function reportArtwork(report?: TrailReport) {
+function reportArtwork(report?: TrailReport, trailCard = report?.card) {
+  if (trailCard?.type === "river")
+    return trailCard.deadly ? riverArt.raging : riverArt.moderate;
   if (report?.calamity) return calamityArt[report.calamity];
   return report?.scene
     ? report.scene === "restored"
@@ -1347,7 +1373,14 @@ function recordTrailResult(
     )
       report.gains.food = (report.gains.food ?? 0) + 1;
   }
-  if (d.action === "roll") {
+  const riverRoll =
+    d.action === "roll" ||
+    (played?.type === "river" && pendingRolls.length > 0);
+  const repairRoll =
+    d.action === "repair" ||
+    (played?.type === "calamity" && pendingRolls.length > 0);
+  const repairKind = before.pending ?? revealedCalamity;
+  if (riverRoll) {
     const n = pendingRolls.at(-1)!;
     report.attempts = (report.attempts ?? 0) + 1;
     report.title =
@@ -1358,15 +1391,15 @@ function recordTrailResult(
       n % 2 === 0
         ? "success"
         : n === 1
-          ? previousTop?.deadly
+          ? (played ?? previousTop)?.deadly
             ? "drowning"
             : "loss"
           : "attempt";
   }
-  if (d.action === "repair") {
+  if (repairRoll) {
     const n = pendingRolls.at(-1)!;
-    report.title = `${titles[before.pending!]}${n >= 4 ? " · repaired" : " · repair failed"} (${n})`;
-    report.calamity = before.pending ?? undefined;
+    report.title = `${titles[repairKind!]}${n >= 4 ? " · repaired" : " · repair failed"} (${n})`;
+    report.calamity = repairKind ?? undefined;
     if (n >= 4) {
       report.scene = "restored";
     }
@@ -1417,14 +1450,14 @@ function recordTrailResult(
     }
   });
   const results = (report.results ??= []);
-  if (d.action === "roll" || d.action === "repair") {
+  if (riverRoll || repairRoll) {
     results.push(
       rollOutcomeText(pendingRolls.at(-1)!, {
-        phase: before.phase,
+        phase: repairRoll ? "repair" : "river",
         traveller: before.players[before.current].name,
-        deadly: !!previousTop?.deadly,
-        calamity: before.pending ? titles[before.pending] : "Wagon repair",
-        calamityKind: before.pending ?? undefined,
+        deadly: !!(played ?? previousTop)?.deadly,
+        calamity: repairKind ? titles[repairKind] : "Wagon repair",
+        calamityKind: repairKind ?? undefined,
         loss: automaticLoss,
       }),
     );
@@ -1471,7 +1504,7 @@ function trail() {
         (c.journeyStep ?? s.count - s.run.length + offset + 1) === step,
     );
     const c = report?.card ?? fallback;
-    return `<div class="trail-piece ${step === activeStep && s.status === "travel" ? "active-connection" : ""}" data-ui-key="trail-step-${step}" tabindex="0" data-trail-results="${escape(JSON.stringify(report?.results ?? []))}" aria-label="Trail card ${step}${step === activeStep ? ", active connection" : ""}">${c ? card(c, reportArtwork(report)) : `<div class="earlier-trail"><img src="${art.trail}" alt="Earlier stretch of trail"></div>`}${trailPlayerBadge(report)}<small>${escape(trailReportTitle(report, c))}</small>${trailOutcomes(report ? [report] : [])}</div>`;
+    return `<div class="trail-piece ${step === activeStep && s.status === "travel" ? "active-connection" : ""}" data-ui-key="trail-step-${step}" tabindex="0" data-trail-results="${escape(JSON.stringify(report?.results ?? []))}" aria-label="Trail card ${step}${step === activeStep ? ", active connection" : ""}">${c ? card(c, reportArtwork(report, c)) : `<div class="earlier-trail"><img src="${art.trail}" alt="Earlier stretch of trail"></div>`}${trailPlayerBadge(report)}<small>${escape(trailReportTitle(report, c))}</small>${trailOutcomes(report ? [report] : [])}</div>`;
   }).join("");
   return `<section class="trail-area" aria-label="Journey trail"><div class="section-line"><h2>The trail so far</h2><span class="journey-calendar">${calendarDate(journeyDate(s.turn - 1, s.startDate))} · ${s.turn - 1} day${s.turn === 2 ? "" : "s"} on the trail</span><button class="trail-return" data-action="trail-end" aria-label="Back to end of trail" title="Back to end of trail" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12h12m-5-5 5 5-5 5M20 5v14"/></svg></button></div><div class="map-track" data-ui-static role="progressbar" aria-label="Journey progress" aria-valuemin="0" aria-valuemax="50" aria-valuenow="${s.count}"><span style="width:${s.count * 2}%"><img class="progress-wagon" src="${art.progressWagon}" alt="" aria-hidden="true"></span></div><div class="trail-body"><div class="trail-route"><div class="trail-strip"><div class="trail-start" data-ui-key="trail-start" tabindex="0" data-trail-results="${escape(JSON.stringify(["Your journey begins in Independence, Missouri. The wagon is packed, the kettle is rattling, and Oregon waits at the far end of fifty trail cards."]))}" aria-label="Journey starts in Independence, Missouri"><div class="start-art"><img src="${art.independence}" alt="A wagon departing the frontier town of Independence"><span class="start-badge">START</span></div><strong>Independence</strong><small>Missouri</small></div>${entries}<div class="trail-marker ${s.status === "won" ? "arrived" : ""}" data-ui-key="trail-finish" style="--finish-progress:${s.count / 50};--finish-dots:${Math.ceil((50 - s.count) / 5)}" aria-label="${s.status === "won" ? "Arrived in Oregon" : "Destination: Oregon"}"><div class="finish-destination"><div class="finish-art"><img src="${art.landscape}" alt="Quiet hills and a wagon at the journey’s destination"><span class="finish-badge"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 14V2m0 0h9l-2 3 2 3H3"/></svg>${s.status === "won" ? "ARRIVED" : "FINISH"}</span></div><strong>Oregon</strong><small>Willamette Valley</small></div></div></div></div>${wagonState()}</div></section>`;
 }
@@ -1563,6 +1596,7 @@ const diePips: Record<number, number[]> = {
 type RollContext = {
   phase: string;
   traveller: string;
+  player?: number;
   deadly: boolean;
   calamity: string;
   calamityKind?: Calamity;
@@ -1605,12 +1639,89 @@ function rollOutcomeText(
             : "No supplies left to lose. Pass the attempt to the next traveller."
         : "The crossing fails. The next traveller must try their luck.";
 }
+function createInterstitial(label: string) {
+  hideOutcomeTooltip();
+  const shell = document.createElement("div");
+  shell.className = "result-interstitial";
+  const panel = document.createElement("section");
+  panel.className = "interstitial-panel";
+  panel.setAttribute("role", "dialog");
+  panel.setAttribute("aria-modal", "true");
+  panel.setAttribute("aria-label", label);
+  panel.tabIndex = -1;
+  shell.append(panel);
+  document.body.append(shell);
+  const overflow = document.body.style.overflow;
+  document.body.style.overflow = "hidden";
+  app.inert = true;
+  gsap.set(shell, { opacity: 0 });
+  const trap = (event: KeyboardEvent) => {
+    if (event.key !== "Tab") return;
+    const targets = Array.from(
+      panel.querySelectorAll<HTMLElement>(
+        'button:not(:disabled), input, textarea, select, [tabindex="0"]',
+      ),
+    );
+    if (!targets.length) {
+      event.preventDefault();
+      panel.focus();
+      return;
+    }
+    const first = targets[0],
+      last = targets.at(-1)!;
+    if (
+      event.shiftKey &&
+      (document.activeElement === first || document.activeElement === panel)
+    ) {
+      event.preventDefault();
+      last.focus();
+    } else if (
+      !event.shiftKey &&
+      (document.activeElement === last || document.activeElement === panel)
+    ) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+  shell.addEventListener("keydown", trap);
+  return {
+    panel,
+    async show() {
+      if (reducedMotion.matches) gsap.set(shell, { opacity: 1 });
+      else
+        await playTimeline((tl) => {
+          tl.to(shell, { opacity: 1, duration: 0.18 }, 0);
+          tl.fromTo(
+            panel,
+            { y: 16, scale: 0.98 },
+            {
+              y: 0,
+              scale: 1,
+              duration: 0.22,
+              ease: "power2.out",
+              clearProps: "transform",
+            },
+            0,
+          );
+        });
+      panel.focus({ preventScroll: true });
+    },
+    async close() {
+      if (!reducedMotion.matches)
+        await playTimeline((tl) =>
+          tl.to(shell, { opacity: 0, duration: 0.16 }),
+        );
+      shell.remove();
+      app.inert = false;
+      document.body.style.overflow = overflow;
+    },
+  };
+}
 async function tumbleDie(result: number, context: RollContext) {
-  const panel = app.querySelector<HTMLElement>(".turn-state-window")!;
+  const overlay = createInterstitial("River crossing or wagon repair result");
+  const panel = overlay.panel;
   const roll = document.createElement("div");
   roll.className = "dice-roll";
-  roll.setAttribute("role", "dialog");
-  roll.setAttribute("aria-modal", "true");
   roll.setAttribute("aria-labelledby", "dice-result");
   roll.tabIndex = -1;
   const requirement =
@@ -1622,8 +1733,20 @@ async function tumbleDie(result: number, context: RollContext) {
       ? "On 1–3, the wagon needs one spare part within one round."
       : `3 or 5 passes the crossing to the next traveller. A 1 ${context.deadly ? "drowns the player" : "loses one supply"}.`;
   roll.setAttribute("aria-describedby", "dice-requirements");
-  roll.innerHTML = `<div class="dice-requirements" id="dice-requirements"><strong>${requirement}</strong><p>${stakes}</p></div><div class="dice-stage" aria-hidden="true"><div class="dice-shadow"></div><div class="dice-hop"><div class="dice-cube">${[1, 2, 3, 4, 5, 6].map((face) => `<div class="dice-face face-${face}">${Array.from({ length: 9 }, (_, i) => `<span class="${diePips[face].includes(i + 1) ? "pip" : ""}"></span>`).join("")}</div>`).join("")}</div></div></div><span class="dice-caption" id="dice-result" role="status">A little tumble of fate…</span>`;
+  const playerIndex =
+    context.player ??
+    game.state.players.findIndex((p) => p.name === context.traveller);
+  const encounterArtwork =
+    context.phase === "repair"
+      ? context.calamityKind
+        ? calamityArt[context.calamityKind]
+        : art.calamity
+      : context.deadly
+        ? riverArt.raging
+        : riverArt.moderate;
+  roll.innerHTML = `<div class="dice-encounter"><img src="${encounterArtwork}" alt="${escape(context.phase === "repair" ? context.calamity : "River crossing")}">${context.phase === "repair" ? `<h3>${escape(context.calamity)}</h3>` : ""}</div>${context.phase === "river" && playerIndex >= 0 ? `<div class="interstitial-person">${portraitImage(game.state.players[playerIndex].portrait ?? playerIndex % 6)}<span>${escape(context.traveller)}</span></div>` : ""}<div class="dice-requirements" id="dice-requirements"><strong>${requirement}</strong><p>${stakes}</p></div><div class="dice-stage" aria-hidden="true"><div class="dice-shadow"></div><div class="dice-hop"><div class="dice-cube">${[1, 2, 3, 4, 5, 6].map((face) => `<div class="dice-face face-${face}">${Array.from({ length: 9 }, (_, i) => `<span class="${diePips[face].includes(i + 1) ? "pip" : ""}"></span>`).join("")}</div>`).join("")}</div></div></div><span class="dice-caption" id="dice-result" role="status">A little tumble of fate…</span>`;
   panel.append(roll);
+  await overlay.show();
   roll.focus({ preventScroll: true });
   roll.addEventListener("keydown", (event) => {
     if (event.key === "Tab") {
@@ -1702,57 +1825,100 @@ async function tumbleDie(result: number, context: RollContext) {
           ? "River crossed"
           : result === 1
             ? context.deadly
-              ? "Traveller drowned"
+              ? `${context.traveller} drowned`
               : "Supply lost"
             : "Crossing failed";
+    if (context.phase === "river" || context.phase === "repair") {
+      const succeeded =
+        context.phase === "repair" ? result >= 4 : result % 2 === 0;
+      roll.classList.add(succeeded ? "crossing-success" : "crossing-setback");
+      const icon = document.createElement("span");
+      icon.className = "crossing-result-icon";
+      icon.setAttribute("aria-hidden", "true");
+      icon.innerHTML =
+        context.phase === "river" && result === 1 && context.deadly
+          ? `<img src="${art.tombstoneIcon}" alt="">`
+          : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${succeeded ? '<path d="m5 12 4 4L19 6"/>' : '<path d="m7 7 10 10M17 7 7 17"/>'}</svg>`;
+      resultHeading.prepend(icon);
+    }
     const explanation = document.createElement("p");
     explanation.className = "dice-outcome";
     explanation.textContent = outcome;
     const proceed = document.createElement("button");
     proceed.className = "dice-continue";
     proceed.textContent = "Continue →";
-    {
-      const image = document.createElement("img");
-      image.className = "river-result-art";
-      image.src =
-        context.phase === "repair"
-          ? result >= 4
-            ? art.landscape
-            : context.calamityKind
-              ? calamityArt[context.calamityKind]
-              : art.calamity
-          : result % 2 === 0
-            ? riverArt.success
-            : result === 1
-              ? context.deadly
-                ? riverArt.drowning
-                : riverArt.loss
-              : art.river;
-      image.alt = resultHeading.textContent;
-      const stage = roll.querySelector<HTMLElement>(".dice-stage")!;
-      stage.hidden = true;
-      stage.after(image);
-      if (!reducedMotion.matches)
-        await playTimeline((tl) =>
-          tl.fromTo(
-            image,
-            { opacity: 0, y: 8 },
-            {
-              opacity: 1,
-              y: 0,
-              duration: 0.3,
-              clearProps: "opacity,transform",
-            },
-          ),
+    proceed.disabled = true;
+    const image = document.createElement("img");
+    image.className = "river-result-art";
+    image.src =
+      context.phase === "repair"
+        ? result >= 4
+          ? art.landscape
+          : context.calamityKind
+            ? calamityArt[context.calamityKind]
+            : art.calamity
+        : result % 2 === 0
+          ? riverArt.success
+          : result === 1
+            ? context.deadly
+              ? riverArt.drowning
+              : riverArt.loss
+            : art.river;
+    image.alt = resultHeading.textContent;
+    const stage = roll.querySelector<HTMLElement>(".dice-stage")!;
+    const encounter = roll.querySelector<HTMLElement>(".dice-encounter")!;
+    const previousHeight = roll.getBoundingClientRect().height;
+    if (!reducedMotion.matches)
+      await playTimeline((tl) => {
+        tl.to(
+          [stage, encounter],
+          { opacity: 0, y: -8, duration: 0.22, ease: "power2.in" },
+          0.25,
         );
-    }
+      });
+    stage.hidden = true;
+    encounter.hidden = true;
+    stage.after(image);
     roll.append(resultHeading, explanation, proceed);
+    const incoming: HTMLElement[] = [image, resultHeading, explanation];
     if (context.loss) {
       const lost = document.createElement("div");
       lost.className = "result-supply";
       lost.innerHTML = lostSupplyEmblem(context.loss.supply);
       explanation.after(lost);
+      incoming.push(lost);
     }
+    incoming.push(proceed);
+    if (!reducedMotion.matches) {
+      gsap.set(incoming, { opacity: 0, y: 10 });
+      const resultHeight = roll.getBoundingClientRect().height;
+      gsap.set(roll, { height: previousHeight, overflow: "hidden" });
+      await playTimeline((tl) => {
+        tl.to(
+          roll,
+          {
+            height: resultHeight,
+            duration: 0.45,
+            ease: "power2.inOut",
+            clearProps: "height,overflow",
+          },
+          0,
+        );
+        tl.to(
+          incoming,
+          {
+            opacity: 1,
+            y: 0,
+            duration: 0.35,
+            stagger: 0.08,
+            ease: "power2.out",
+            clearProps: "opacity,transform",
+          },
+          0.08,
+        );
+      });
+    }
+    proceed.disabled = false;
     await new Promise<void>((resolve) => {
       proceed.addEventListener(
         "click",
@@ -1771,6 +1937,7 @@ async function tumbleDie(result: number, context: RollContext) {
       });
   } finally {
     roll.remove();
+    await overlay.close();
   }
 }
 type ActionResult = {
@@ -1780,6 +1947,9 @@ type ActionResult = {
   visual?: string;
   image?: string;
   drawn?: TrailCard;
+  death?: boolean;
+  encounter?: boolean;
+  continueLabel?: string;
 };
 function actionResult(
   d: DOMStringMap,
@@ -1793,6 +1963,7 @@ function actionResult(
       (c) => !actor.hand.some((old) => old.id === c.id),
     );
     return {
+      owner: before.current,
       title: drawn ? "Your new card" : "No cards left",
       text: drawn
         ? "Added to your hand. It can be played on a later turn."
@@ -1829,6 +2000,7 @@ function actionResult(
     const kind = action.args?.["trade-kind"] as Supply;
     const recipient = Number(action.args?.["trade-recipient"]);
     return {
+      owner: recipient,
       title: "Trade complete",
       text: `Two supplies exchanged for ${names[kind].toLowerCase()}, packed for ${before.players[recipient].name}.`,
       visual: supplyEmblem(kind),
@@ -1846,54 +2018,228 @@ function actionResult(
   // Actions that only enter the next prompt or finish a chosen step don't need
   // another acknowledgement. Actual reveals and inventory results above do.
 }
+function deathResult(owner: number, before: Journey): ActionResult {
+  const player = game.state.players[owner];
+  const cause = player.deathCause || "unknown causes";
+  const kind = (Object.keys(titles) as Calamity[]).find(
+    (key) => titles[key].toLowerCase() === cause.toLowerCase(),
+  );
+  const expired = before.hazards.find(
+    (hazard) => hazard.owner === owner && hazard.kind === kind,
+  );
+  const explanation = expired
+    ? `${titles[expired.kind]} went unremedied before time ran out.`
+    : "The trail took a life the wagon could not save.";
+  return {
+    owner,
+    death: true,
+    title: `${player.name} died of ${cause.toLowerCase()}`,
+    image: kind
+      ? calamityArt[kind]
+      : /drown/i.test(cause)
+        ? riverArt.drowning
+        : art.legacy,
+    text: `${player.name} died${deathJourneyText(player)}. ${explanation} ${game.state.players.some((p) => p.alive) ? "The wagon falls quiet. Their remaining supplies can be willed to the companions carrying on." : "No travellers remain. Here, the journey ends; the prairie remembers them."}`,
+  };
+}
 async function revealActionResult(result: ActionResult) {
-  const state = app.querySelector<HTMLElement>(".turn-state");
-  if (!state) return;
-  if (!reducedMotion.matches)
-    await playTimeline((tl) =>
-      tl.to(state, { y: -28, opacity: 0, duration: 0.24, ease: "power2.in" }),
+  const overlay = createInterstitial(result.title);
+  const state = overlay.panel;
+  try {
+    const content = document.createElement("template");
+    content.innerHTML = `<div class="action-result ${result.death ? "death-result" : result.encounter ? "encounter-reveal" : ""}"><h3 class="result-heading">${result.owner !== undefined ? portraitImage(game.state.players[result.owner].portrait ?? result.owner % 6) : ""}${result.death ? `<img class="result-death-icon" src="${art.tombstoneIcon}" alt="Gravestone">` : ""}<span>${escape(result.title)}</span></h3>${result.image ? `<img class="result-artwork" src="${result.image}" alt="${escape(result.title)}">` : ""}${result.drawn ? `<div class="revealed-card is-face-down"><div class="drawn-card-rotor"><div class="drawn-card-back" aria-hidden="true"><span><img src="${art.progressWagon}" alt=""></span><small>Click to reveal</small></div><div class="drawn-card-front" aria-hidden="true">${card(result.drawn)}<strong>${label(result.drawn)}</strong>${result.drawn.type === "river" ? riverFailureTag(!!result.drawn.deadly) : `<p>${description(result.drawn)}</p>`}</div></div></div>` : result.visual ? `<div class="result-supply">${result.visual}</div>` : ""}<p class="result-message">${escape(result.text)}</p><button class="result-continue" disabled>${escape(result.continueLabel ?? "Continue →")}</button></div>`;
+    reconcile(state, content.content);
+    const drawn = state.querySelector<HTMLElement>(".revealed-card");
+    const message = state.querySelector<HTMLElement>(".result-message")!;
+    if (drawn) {
+      message.hidden = true;
+      drawn.setAttribute("role", "button");
+      drawn.setAttribute("aria-label", "Flip your new card");
+      drawn.tabIndex = 0;
+    }
+    await overlay.show();
+    if (drawn) {
+      drawn.focus({ preventScroll: true });
+      await new Promise<void>((resolve) => {
+        const flip = (event: Event) => {
+          if (
+            event instanceof KeyboardEvent &&
+            !["Enter", " "].includes(event.key)
+          )
+            return;
+          event.preventDefault();
+          event.stopPropagation();
+          drawn.removeEventListener("click", flip);
+          drawn.removeEventListener("keydown", flip);
+          resolve();
+        };
+        drawn.addEventListener("click", flip);
+        drawn.addEventListener("keydown", flip);
+      });
+      drawn.removeAttribute("role");
+      drawn.removeAttribute("aria-label");
+      drawn.removeAttribute("tabindex");
+      const rotor = drawn.querySelector<HTMLElement>(".drawn-card-rotor")!;
+      if (reducedMotion.matches) gsap.set(rotor, { rotationY: 180 });
+      else
+        await playTimeline((tl) => {
+          tl.fromTo(
+            rotor,
+            { rotationY: 0 },
+            {
+              rotationY: 180,
+              duration: 0.55,
+              ease: "power2.inOut",
+            },
+          );
+        });
+      drawn.classList.remove("is-face-down");
+      drawn.querySelector(".drawn-card-front")!.removeAttribute("aria-hidden");
+      message.hidden = false;
+      if (!reducedMotion.matches)
+        await playTimeline((tl) =>
+          tl.fromTo(
+            message,
+            { opacity: 0, y: 4 },
+            {
+              opacity: 1,
+              y: 0,
+              duration: 0.16,
+              clearProps: "opacity,transform",
+            },
+          ),
+        );
+    }
+    const proceed = state.querySelector<HTMLButtonElement>(".result-continue")!;
+    proceed.disabled = false;
+    proceed.focus({ preventScroll: true });
+    await new Promise<void>((resolve) =>
+      proceed.addEventListener(
+        "click",
+        (event) => {
+          event.stopPropagation();
+          proceed.disabled = true;
+          resolve();
+        },
+        { once: true },
+      ),
     );
-  const content = document.createElement("template");
-  content.innerHTML = `<div class="action-result"><h3 class="result-heading">${result.owner !== undefined && result.owner !== Number(app.querySelector<HTMLElement>(".turn-header")?.dataset.turnPlayer) ? portraitImage(game.state.players[result.owner].portrait ?? result.owner % 6) : ""}<span>${escape(result.title)}</span></h3>${result.image ? `<img class="result-artwork" src="${result.image}" alt="${escape(result.title)}">` : ""}${result.drawn ? `<div class="revealed-card">${card(result.drawn)}<strong>${label(result.drawn)}</strong>${result.drawn.type === "river" ? riverFailureTag(!!result.drawn.deadly) : `<p>${description(result.drawn)}</p>`}</div>` : result.visual ? `<div class="result-supply">${result.visual}</div>` : ""}<p class="result-message">${escape(result.text)}</p><button class="result-continue" disabled>Continue →</button></div>`;
-  reconcile(state, content.content);
-  gsap.set(state, { clearProps: "opacity,transform" });
-  if (!reducedMotion.matches)
-    await playTimeline((tl) => {
-      tl.fromTo(
-        state,
-        { y: 28, opacity: 0 },
-        { y: 0, opacity: 1, duration: 0.32, clearProps: "opacity,transform" },
-        0,
-      );
-      const drawn = state.querySelector(".revealed-card");
-      if (drawn)
+  } finally {
+    await overlay.close();
+  }
+}
+async function revealWills() {
+  while (game.state.phase === "legacy" && game.state.deaths.length) {
+    const owner = game.state.deaths[0];
+    const dead = game.state.players[owner];
+    const overlay = createInterstitial(`Farewell, ${dead.name}`);
+    willPanel = overlay.panel;
+    willPanel.classList.add("farewell-interstitial");
+    willPanel.innerHTML = `<h2>Farewell, ${escape(dead.name)}.</h2><p>Leave up to two supplies to your companions. The rest return to the shop.</p><div class="legacy-layout">${memorial(owner)}${willEditor()}</div>`;
+    try {
+      await overlay.show();
+      await new Promise<void>((resolve) => {
+        overlay.panel.addEventListener("click", (event) => {
+          const commit = (event.target as Element).closest<HTMLButtonElement>(
+            '[data-action="will-supplies"]',
+          );
+          if (!commit) return;
+          event.stopPropagation();
+          if (
+            willDraft.size > 2 - game.state.legacyCount ||
+            [...willDraft].some(
+              ([index, recipient]) =>
+                !dead.supplies[index] || !game.living.includes(recipient),
+            )
+          )
+            return;
+          commit.disabled = true;
+          dead.epitaph =
+            overlay.panel.querySelector<HTMLTextAreaElement>("#epitaph")!.value;
+          for (const [index, recipient] of [...willDraft].sort(
+            (a, b) => b[0] - a[0],
+          ))
+            game.will(index, recipient);
+          game.closeWill();
+          persist({
+            type: "will-supplies",
+            args: {
+              epitaph: dead.epitaph,
+              recipients: [...willDraft].map(
+                ([index, recipient]) => `${index}:${recipient}`,
+              ),
+            },
+          });
+          willDraftOwner = -1;
+          willDraft.clear();
+          selectedWillSupply = null;
+          resolve();
+        });
+      });
+    } finally {
+      willPanel = undefined;
+      await overlay.close();
+    }
+  }
+}
+async function revealJourneyEnd() {
+  const s = game.state;
+  const won = s.status === "won";
+  const title = won ? "Oregon. At long last." : "The trail falls silent.";
+  const survivors = s.players.filter((p) => p.alive);
+  const days = s.turn - 1;
+  const description = won
+    ? "The wheels can rest. You made it to the Willamette Valley—put the kettle on, and let tomorrow wait. One survivor brings a victory home for everyone."
+    : survivors.length
+      ? "The wagon can go no farther. Oregon is still beyond the horizon, but every mile travelled belongs to your story."
+      : "No one remains to guide the wagon. The prairie keeps their names, and the trail remembers every mile.";
+  const overlay = createInterstitial(title);
+  overlay.panel.classList.add(
+    "journey-finale",
+    won ? "journey-victory" : "journey-defeat",
+  );
+  overlay.panel.innerHTML = `<div class="finale-art"><img src="${won ? art.victory : art.defeat}" alt="${won ? "A wagon arrives at a welcoming Oregon homestead" : "An abandoned wagon and grave markers on the quiet prairie"}"></div><div class="finale-copy"><span class="finale-eyebrow">${won ? "Journey complete" : "Journey’s end"}</span><h2>${title}</h2><p>${escape(description)}</p>${!won && survivors.length ? `<p class="finale-cause">${escape(s.note)}</p>` : ""}<div class="finale-stats"><span><strong>${days}</strong>day${days === 1 ? "" : "s"} on the trail</span><span><strong>${s.count} / 50</strong>trail cards</span><span><strong>${survivors.length} / ${s.players.length}</strong>travellers remaining</span></div><div class="finale-party">${s.players.map((p, index) => `<div class="finale-traveller ${p.alive ? "" : "fallen"}">${p.alive ? portraitImage(p.portrait ?? index % 6) : `<img class="finale-grave" src="${art.tombstoneIcon}" alt="">`}<span>${escape(p.name)}</span>${!p.alive ? `<small>${escape(p.deathCause ?? "Lost on the trail")}</small>` : ""}</div>`).join("")}</div><button class="finale-continue" disabled>View journey →</button></div>`;
+  try {
+    await overlay.show();
+    if (!reducedMotion.matches)
+      await playTimeline((tl) => {
         tl.fromTo(
-          drawn,
-          { rotationY: -90, opacity: 0, transformPerspective: 700 },
+          overlay.panel.querySelector(".finale-art img"),
+          { scale: 1.08 },
+          { scale: 1, duration: 1.1, ease: "power2.out" },
+          0,
+        );
+        tl.fromTo(
+          overlay.panel.querySelector(".finale-copy"),
+          { opacity: 0, y: 14 },
           {
-            rotationY: 0,
             opacity: 1,
+            y: 0,
             duration: 0.5,
             ease: "power2.out",
-            clearProps: "all",
+            clearProps: "opacity,transform",
           },
-          0.12,
+          0.15,
         );
-    });
-  const proceed = state.querySelector<HTMLButtonElement>(".result-continue")!;
-  proceed.disabled = false;
-  proceed.focus({ preventScroll: true });
-  await new Promise<void>((resolve) =>
-    proceed.addEventListener(
-      "click",
-      (event) => {
-        event.stopPropagation();
-        proceed.disabled = true;
-        resolve();
-      },
-      { once: true },
-    ),
-  );
+      });
+    const proceed =
+      overlay.panel.querySelector<HTMLButtonElement>(".finale-continue")!;
+    proceed.disabled = false;
+    proceed.focus({ preventScroll: true });
+    await new Promise<void>((resolve) =>
+      proceed.addEventListener(
+        "click",
+        (event) => {
+          event.stopPropagation();
+          proceed.disabled = true;
+          resolve();
+        },
+        { once: true },
+      ),
+    );
+  } finally {
+    await overlay.close();
+  }
 }
 function calamityResultText(
   kind: Calamity | undefined,
@@ -1922,40 +2268,38 @@ async function revealCalamity(
   owner: number,
   loss?: SupplyLoss,
 ) {
-  const state = app.querySelector<HTMLElement>(".turn-state");
-  if (!state) return;
-  if (!reducedMotion.matches)
-    await playTimeline((tl) =>
-      tl.to(state, { y: -28, opacity: 0, duration: 0.24, ease: "power2.in" }),
+  const overlay = createInterstitial(
+    kind ? conditionTitle(kind, owner) : "Calamity result",
+  );
+  const state = overlay.panel;
+  try {
+    const details = calamityResultText(kind, note, owner, loss);
+    const death = casualties.includes(game.state.players[owner].name);
+    const additionalCasualties = casualties.filter(
+      (name) => !details.includes(`${name} died`),
     );
-  const details = calamityResultText(kind, note, owner, loss);
-  const death = casualties.includes(game.state.players[owner].name);
-  const image = kind ? calamityArt[kind] : undefined;
-  const content = document.createElement("template");
-  content.innerHTML = `<div class="calamity-result"><div class="action-summary">${image ? `<img class="action-artwork" src="${image}" alt="${titles[kind!]}">` : ""}<div class="action-copy"><h3 class="result-heading">${death ? `<img class="result-death-icon" src="${art.tombstoneIcon}" alt="" aria-hidden="true">` : ""}<span>${escape(kind ? conditionTitle(kind, owner) : "No calamity")}</span></h3><p class="result-message">${escape(details)}</p>${loss ? `<div class="result-supply">${lostSupplyEmblem(loss.supply)}</div>` : ""}${casualties.length ? `<p class="calamity-casualties">${casualties.map(escape).join(", ")} ${casualties.length === 1 ? "has" : "have"} died.</p>` : ""}</div></div><button class="calamity-continue">Continue →</button></div>`;
-  reconcile(state, content.content);
-  gsap.set(state, { clearProps: "opacity,transform" });
-  if (!reducedMotion.matches)
-    await playTimeline((tl) =>
-      tl.fromTo(
-        state,
-        { y: 28, opacity: 0 },
-        { y: 0, opacity: 1, duration: 0.42, clearProps: "opacity,transform" },
+    const image = kind ? calamityArt[kind] : undefined;
+    const content = document.createElement("template");
+    content.innerHTML = `<div class="calamity-result"><div class="action-summary">${image ? `<img class="action-artwork" src="${image}" alt="${titles[kind!]}">` : ""}<div class="action-copy"><h3 class="result-heading">${kind && !wagonKinds.has(kind) ? portraitImage(game.state.players[owner].portrait ?? owner % 6) : ""}${death ? `<img class="result-death-icon" src="${art.tombstoneIcon}" alt="" aria-hidden="true">` : ""}<span>${escape(kind ? conditionTitle(kind, owner) : "No calamity")}</span></h3><p class="result-message">${escape(details)}</p>${loss ? `<div class="result-supply">${lostSupplyEmblem(loss.supply)}</div>` : ""}${additionalCasualties.length ? `<p class="calamity-casualties">${additionalCasualties.map(escape).join(", ")} ${additionalCasualties.length === 1 ? "has" : "have"} died.</p>` : ""}</div></div><button class="calamity-continue">Continue →</button></div>`;
+    reconcile(state, content.content);
+    await overlay.show();
+    const proceed =
+      state.querySelector<HTMLButtonElement>(".calamity-continue")!;
+    proceed.focus({ preventScroll: true });
+    await new Promise<void>((resolve) =>
+      proceed.addEventListener(
+        "click",
+        (event) => {
+          event.stopPropagation();
+          proceed.disabled = true;
+          resolve();
+        },
+        { once: true },
       ),
     );
-  const proceed = state.querySelector<HTMLButtonElement>(".calamity-continue")!;
-  proceed.focus({ preventScroll: true });
-  await new Promise<void>((resolve) =>
-    proceed.addEventListener(
-      "click",
-      (event) => {
-        event.stopPropagation();
-        proceed.disabled = true;
-        resolve();
-      },
-      { once: true },
-    ),
-  );
+  } finally {
+    await overlay.close();
+  }
 }
 app.addEventListener("click", async (event) => {
   const summary = (event.target as HTMLElement).closest("summary");
@@ -2024,6 +2368,7 @@ app.addEventListener("click", async (event) => {
   const rollContext: RollContext = {
     phase: game.state.phase,
     traveller: game.player.name,
+    player: game.state.current,
     deadly: !!game.top?.deadly,
     calamity: game.state.pending ? titles[game.state.pending] : "Wagon repair",
     calamityKind: game.state.pending ?? undefined,
@@ -2041,7 +2386,23 @@ app.addEventListener("click", async (event) => {
       ? button.querySelector(".card-art")
       : d.take
         ? button.querySelector(".supply-stack")
-        : null;
+        : d.cure && d.supply
+          ? app.querySelector(
+              `.turn-header [data-supply-kind="${d.supply}"] .supply-stack`,
+            )
+          : null;
+  const remedyHazard = d.cure
+    ? beforeResult.hazards.find((h) => h.id === Number(d.cure))
+    : undefined;
+  const remedyDestination = remedyHazard
+    ? wagonKinds.has(remedyHazard.kind)
+      ? app.querySelector(
+          `[data-ui-key="wagon-condition-${remedyHazard.id}"] img`,
+        )
+      : app.querySelector(
+          `.players [data-ui-key="condition-${remedyHazard.id}"]`,
+        )
+    : undefined;
   if (d.action === "clear-storage") {
     if (
       window.confirm(
@@ -2422,6 +2783,15 @@ app.addEventListener("click", async (event) => {
     return;
   }
   setBusy(true);
+  // Newly encountered crossings and repairs resolve in the same reveal sequence.
+  if (playedCard?.type === "river" && game.state.phase === "river") {
+    rollContext.phase = "river";
+    rollContext.deadly = !!playedCard.deadly;
+  } else if (playingCalamity && game.state.phase === "repair") {
+    rollContext.phase = "repair";
+    rollContext.calamityKind = game.state.pending ?? undefined;
+    rollContext.calamity = titles[game.state.pending!];
+  }
   const automaticLoss =
     game.state.lastSupplyLoss?.sequence !==
     beforeResult.lastSupplyLoss?.sequence
@@ -2437,7 +2807,7 @@ app.addEventListener("click", async (event) => {
     JSON.stringify(game.state.trailReports ?? {}) !==
       JSON.stringify(beforeResult.trailReports ?? {});
   persist(action);
-  refreshPlayerSummaries(previousPlayer);
+  if (!d.cure) refreshPlayerSummaries(previousPlayer);
   const pendingTile = playedCard
     ? reservePlayedTrailTile(
         playedCard,
@@ -2455,6 +2825,8 @@ app.addEventListener("click", async (event) => {
       if (d.play !== undefined && pendingTile) {
         await scrollTrailToEnd();
         destination = pendingTile.firstElementChild;
+      } else if (d.cure && remedyDestination) {
+        destination = remedyDestination;
       } else if (d.take) {
         const bag = app.querySelector(".supply-hand > div");
         if (bag) {
@@ -2478,16 +2850,60 @@ app.addEventListener("click", async (event) => {
           playedCard
             ? (button.closest<HTMLElement>(".hand-card") ?? undefined)
             : undefined,
+          (d.take ?? d.supply) as Supply | undefined,
         );
     }
+    if (d.cure) refreshPlayerSummaries(previousPlayer);
     const supplies = app.querySelector(".turn-header .supply-hand");
     if (supplies) {
       const inventory = document.createElement("template");
       inventory.innerHTML = playerSupplies(previousPlayer);
       reconcile(supplies, inventory.content.firstElementChild!);
     }
+    if (playedCard?.type === "river" && game.state.phase === "river") {
+      await revealActionResult({
+        owner: previousPlayer,
+        encounter: true,
+        title: "River crossing",
+        image: playedCard.deadly ? riverArt.raging : riverArt.moderate,
+        text: playedCard.deadly
+          ? "A raging river blocks the trail. Brave the current to bring the wagon across. Risk: drowning."
+          : "The wagon reaches a river. Find a way through the current to the far bank. Risk: losing a supply.",
+        continueLabel: "Roll to ford",
+      });
+      const beforeCrossing = structuredClone(game.state);
+      game.cross();
+      rollContext.loss =
+        game.state.lastSupplyLoss?.sequence !==
+        beforeCrossing.lastSupplyLoss?.sequence
+          ? game.state.lastSupplyLoss
+          : undefined;
+      recordTrailResult({ action: "roll" }, beforeCrossing);
+      persist({ type: "roll" });
+      refreshPlayerSummaries(previousPlayer);
+    }
     if (
       playingCalamity &&
+      game.state.phase === "repair" &&
+      game.state.pending
+    ) {
+      const kind = game.state.pending;
+      await revealActionResult({
+        encounter: true,
+        title: titles[kind],
+        image: calamityArt[kind],
+        text: "The wagon has broken down. Try a repair to get the wheels turning again.",
+        continueLabel: "Roll to repair",
+      });
+      const beforeRepair = structuredClone(game.state);
+      game.repair();
+      recordTrailResult({ action: "repair" }, beforeRepair);
+      persist({ type: "repair" });
+      refreshPlayerSummaries(previousPlayer);
+    }
+    if (
+      playingCalamity &&
+      pendingRolls.length === 0 &&
       (revealedCalamity === "thief" ||
         !["repair", "discard"].includes(game.state.phase))
     )
@@ -2503,29 +2919,23 @@ app.addEventListener("click", async (event) => {
     const hadDiceResult = pendingRolls.length > 0;
     for (const n of pendingRolls.splice(0)) await tumbleDie(n, rollContext);
     if (!playingCalamity && !hadDiceResult) {
-      let result = actionResult(d, beforeResult, action, playedCard);
-      const hasDeath = game.state.players.some(
-        (p, i) => beforeResult.players[i].alive && !p.alive,
+      const result = d.take
+        ? undefined
+        : actionResult(d, beforeResult, action, playedCard);
+      const casualties = game.state.players.flatMap((p, i) =>
+        beforeResult.players[i].alive && !p.alive ? [i] : [],
       );
-      if (!result && (hasDeath || game.state.status !== beforeResult.status))
-        result = {
-          title:
-            game.state.status === "won" ? "Oregon reached" : "Journey update",
-          text: game.state.note,
-        };
-      if (result) {
-        const casualties = game.state.players
-          .filter((p, i) => beforeResult.players[i].alive && !p.alive)
-          .map((p) => p.name);
-        if (casualties.length)
-          result.text += ` ${casualties.join(", ")} ${casualties.length === 1 ? "has" : "have"} died.`;
-        if (game.state.status === "won")
-          result.text += " You have reached Oregon.";
-        else if (game.state.status === "lost")
-          result.text += " The journey has ended.";
-        await revealActionResult(result);
-      }
+      if (result) await revealActionResult(result);
+      for (const owner of casualties)
+        await revealActionResult(deathResult(owner, beforeResult));
     }
+    if (game.state.phase === "legacy") await revealWills();
+    if (
+      !wasSetup &&
+      beforeResult.status === "travel" &&
+      game.state.status !== "travel"
+    )
+      await revealJourneyEnd();
     const turnChanged =
       !wasSetup &&
       (game.state.turn !== previousTurn ||
@@ -2675,16 +3085,25 @@ if (game.state.phase === "discard") {
 if (saved) persist();
 setBusy(false);
 render();
-if (!reducedMotion.matches) {
+void (async () => {
   setBusy(true);
-  playTimeline((tl) =>
-    tl.fromTo(
-      app.children,
-      { opacity: 0, y: 10 },
-      { opacity: 1, y: 0, duration: 0.6, stagger: 0.05, clearProps: "all" },
-    ),
-  ).finally(() => setBusy(false));
-}
+  try {
+    if (!reducedMotion.matches)
+      await playTimeline((tl) =>
+        tl.fromTo(
+          app.children,
+          { opacity: 0, y: 10 },
+          { opacity: 1, y: 0, duration: 0.6, stagger: 0.05, clearProps: "all" },
+        ),
+      );
+    if (!setup && game.state.phase === "legacy") {
+      await revealWills();
+      render();
+    }
+  } finally {
+    setBusy(false);
+  }
+})();
 if (import.meta.hot)
   import.meta.hot.dispose(() => {
     active?.progress(1);

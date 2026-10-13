@@ -651,12 +651,16 @@ footer p {
 .player {
   flex: 1 1 180px;
   min-width: 0;
-  border-left: 2px solid #bdb69b;
-  padding: 5px 10px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 9px 10px;
 }
 .player.current {
-  border-color: var(--sage);
-  background: #69745b12;
+  border-color: #69745b70;
+  background: #69745b18;
+  box-shadow:
+    0 2px 8px #41483b12,
+    inset 0 0 0 1px #f7f0dc80;
 }
 .player strong {
   font:
@@ -2096,7 +2100,7 @@ button:has(> .action-icon) {
     serif;
 }
 .action-result > p,
-.revealed-card > p {
+.drawn-card-front > p {
   font-size: 12px;
   line-height: 1.6;
   color: var(--quiet);
@@ -2107,16 +2111,15 @@ button:has(> .action-icon) {
   border: 1px solid var(--line);
   padding: 6px;
   background: var(--paper);
-  backface-visibility: hidden;
 }
-.revealed-card > strong {
+.drawn-card-front > strong {
   display: block;
   padding: 10px 4px 4px;
   font:
     15px Georgia,
     serif;
 }
-.revealed-card > p {
+.drawn-card-front > p {
   padding: 0 4px;
 }
 .result-supply {
@@ -2715,17 +2718,17 @@ button:has(> .action-icon) {
 }
 
 .player.unwell {
-  border-left: 3px solid #9b634a;
   background: #b578521c;
   box-shadow: inset 0 0 0 1px #a96f4f35;
 }
 .player.unwell.current,
 .player.dead.current {
-  outline: 1px solid var(--sage);
-  outline-offset: -1px;
+  border-color: #69745b90;
+  box-shadow:
+    0 2px 8px #41483b12,
+    inset 0 0 0 1px #f7f0dc60;
 }
 .player.dead {
-  border-left: 3px solid #696660;
   background: #77736b20;
   box-shadow: inset 0 0 0 1px #77736b45;
   color: #58554e;
@@ -2846,4 +2849,382 @@ button.wagon-condition:focus-visible {
   height: 28px;
   flex: 0 0 28px;
   object-fit: contain;
+}
+
+.result-interstitial {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: #363b32a6;
+  backdrop-filter: blur(2px);
+}
+.interstitial-panel {
+  width: min(520px, 100%);
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  padding: 24px;
+  border: 1px solid var(--line);
+  background: var(--paper) url("./assets/paper.webp") center / 640px;
+  box-shadow: 6px 8px 0 #25292030;
+  outline: none;
+}
+.interstitial-panel .dice-roll {
+  position: relative;
+  inset: auto;
+  min-height: 390px;
+  padding: 0;
+  background: transparent;
+}
+.interstitial-panel .calamity-result .action-summary {
+  flex-direction: column;
+}
+.interstitial-panel .calamity-result .action-artwork {
+  width: 100%;
+  max-width: 100%;
+  max-height: 220px;
+  object-fit: cover;
+}
+.interstitial-panel .result-continue,
+.interstitial-panel .calamity-continue {
+  margin-top: 12px;
+}
+.supply-flight .supply-label,
+.supply-flight .supply-count {
+  display: none;
+}
+.supply-flight .supply-stack {
+  width: 100%;
+  height: 100%;
+}
+.supply-flight {
+  opacity: 1;
+  filter: none;
+}
+@media (max-width: 600px) {
+  .interstitial-panel {
+    padding: 18px;
+  }
+}
+
+.interstitial-person {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font:
+    16px Georgia,
+    serif;
+}
+.interstitial-person .portrait {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+}
+
+.death-result .result-artwork {
+  display: block;
+  width: 100%;
+  max-height: 220px;
+  margin: 14px 0;
+}
+.death-result .result-heading > .portrait {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+}
+.death-result .result-death-icon {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+}
+
+/* Outcome dialogs share a centered composition and a trailing action. */
+.interstitial-panel {
+  text-align: center;
+}
+.interstitial-panel .result-heading {
+  justify-content: center;
+}
+.interstitial-panel .action-copy {
+  width: 100%;
+}
+.interstitial-panel .result-artwork,
+.interstitial-panel .revealed-card {
+  margin-inline: auto;
+}
+.interstitial-panel .result-continue,
+.interstitial-panel .calamity-continue,
+.interstitial-panel .dice-continue {
+  display: block;
+  align-self: flex-end;
+  margin-left: auto;
+  margin-right: 0;
+}
+.revealed-card {
+  position: relative;
+  perspective: 700px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+.drawn-card-rotor {
+  display: grid;
+  transform-style: preserve-3d;
+  transform-origin: center;
+}
+.drawn-card-front,
+.drawn-card-back {
+  grid-area: 1 / 1;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+.drawn-card-front {
+  transform: rotateY(180deg);
+  border: 1px solid var(--line);
+  padding: 6px;
+  background: var(--paper);
+}
+.drawn-card-back {
+  position: relative;
+  display: grid;
+  place-items: center;
+  border: 6px solid var(--paper);
+  outline: 1px solid var(--line);
+  background:
+    repeating-linear-gradient(45deg, transparent 0 8px, #ece4ce22 8px 9px),
+    repeating-linear-gradient(-45deg, transparent 0 8px, #ece4ce22 8px 9px),
+    #647265;
+  color: #ece4ce;
+}
+.drawn-card-back span {
+  display: grid;
+  place-items: center;
+  width: 120px;
+  height: 96px;
+  border: 0;
+}
+
+.dice-encounter img {
+  width: 100%;
+  height: 120px;
+  object-fit: cover;
+}
+.dice-encounter h3 {
+  margin: 10px 0;
+  font:
+    19px Georgia,
+    serif;
+}
+
+.crossing-success {
+  --crossing-result-color: #3f6650;
+  --crossing-result-wash: #718e6b20;
+}
+.crossing-setback {
+  --crossing-result-color: #934d39;
+  --crossing-result-wash: #b2694820;
+}
+.crossing-success .dice-result-heading,
+.crossing-setback .dice-result-heading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 12px 16px;
+  margin-top: 8px;
+  border: 1px solid
+    color-mix(in srgb, var(--crossing-result-color) 30%, transparent);
+  background: var(--crossing-result-wash);
+  color: var(--crossing-result-color);
+  border-radius: 3px;
+}
+.crossing-result-icon {
+  display: inline-flex;
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+}
+.crossing-result-icon svg,
+.crossing-result-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.revealed-card.is-face-down {
+  cursor: pointer;
+}
+.revealed-card.is-face-down:focus-visible {
+  outline: 2px solid var(--sage);
+  outline-offset: 4px;
+}
+.drawn-card-back small {
+  position: absolute;
+  bottom: 18px;
+  width: 100%;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+.encounter-reveal .result-artwork {
+  display: block;
+  width: 100%;
+  max-height: 220px;
+  margin-block: 14px;
+}
+
+.drawn-card-back span img {
+  width: 112px;
+  height: 88px;
+  object-fit: contain;
+  mix-blend-mode: luminosity;
+  opacity: 0.85;
+}
+
+.journey-finale {
+  width: min(760px, 100%);
+  padding: 0;
+  border-color: #c4b48c;
+}
+.journey-victory {
+  --finale-color: #466650;
+}
+.journey-defeat {
+  --finale-color: #785447;
+}
+.finale-art {
+  overflow: hidden;
+  height: clamp(180px, 32vh, 330px);
+}
+.finale-art img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.finale-copy {
+  padding: 24px 32px;
+}
+.finale-eyebrow {
+  color: var(--finale-color);
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 10px;
+}
+.finale-copy h2 {
+  margin: 8px 0 14px;
+  color: var(--finale-color);
+  font:
+    clamp(28px, 5vw, 40px) Georgia,
+    serif;
+}
+.finale-copy > p {
+  max-width: 560px;
+  margin: 0 auto 18px;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.finale-cause {
+  color: var(--quiet);
+}
+.finale-stats {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 16px 28px;
+  padding: 16px 0;
+  border-block: 1px solid var(--line);
+  font-size: 10px;
+  color: var(--quiet);
+}
+.finale-stats strong {
+  display: block;
+  margin-bottom: 5px;
+  font:
+    24px Georgia,
+    serif;
+  color: var(--finale-color);
+}
+.finale-party {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 20px 0;
+}
+.finale-traveller {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  max-width: 110px;
+  font:
+    12px Georgia,
+    serif;
+}
+.finale-traveller .portrait,
+.finale-grave {
+  width: 42px;
+  height: 42px;
+  object-fit: contain;
+}
+.finale-traveller small {
+  font: 9px var(--body-font, sans-serif);
+  color: var(--quiet);
+}
+.finale-continue {
+  display: block;
+  margin-left: auto;
+}
+@media (max-width: 600px) {
+  .interstitial-panel.journey-finale {
+    padding: 0;
+  }
+  .finale-copy {
+    padding: 20px;
+  }
+  .finale-stats {
+    gap: 16px;
+  }
+}
+
+.finale-traveller .portrait {
+  flex: 0 0 42px;
+}
+
+.farewell-interstitial {
+  width: min(900px, 100%);
+}
+.farewell-interstitial > h2 {
+  margin: 0 0 8px;
+  font:
+    28px Georgia,
+    serif;
+}
+.farewell-interstitial > p {
+  color: var(--quiet);
+  font-size: 12px;
+  margin-bottom: 20px;
+}
+.farewell-interstitial .will-editor {
+  text-align: left;
+}
+
+.player-turn-tag {
+  display: inline-block;
+  vertical-align: middle;
+  margin-left: 6px;
+  padding: 3px 6px;
+  border-radius: 3px;
+  background: var(--sage);
+  color: var(--paper);
+  font:
+    9px "Courier New",
+    monospace;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
