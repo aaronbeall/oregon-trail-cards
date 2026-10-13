@@ -1316,7 +1316,7 @@ select:focus-visible {
   align-items: center;
   gap: 7px;
 }
-.trade-footer button {
+.trade-footer > button {
   background: var(--sage);
   color: #fff8e5;
   border-color: var(--sage);
@@ -3378,4 +3378,219 @@ button.wagon-condition:focus-visible {
 button.wagon-condition:focus-visible {
   outline: 2px solid var(--sage);
   outline-offset: 2px;
+}
+
+.exchange-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: 28px;
+  padding: 20px 0;
+  border-top: 1px solid var(--line);
+}
+.exchange-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+.exchange-heading h3 {
+  margin: 0;
+  font:
+    23px Georgia,
+    serif;
+}
+.exchange-heading > span {
+  color: var(--quiet);
+  font:
+    10px "Courier New",
+    monospace;
+}
+.exchange-columns section > p {
+  margin: 8px 0 16px;
+  color: var(--quiet);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.exchange-bags {
+  display: grid;
+  gap: 14px;
+}
+.exchange-owner {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 8px;
+  font:
+    14px Georgia,
+    serif;
+}
+.exchange-bag .trade-picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.exchange-bag .trade-picks label {
+  padding: 7px;
+  border-radius: 3px;
+  gap: 5px;
+  font-size: 11px;
+}
+.exchange-bag .trade-picks label:has(input:disabled) {
+  opacity: 0.5;
+  cursor: default;
+}
+.exchange-bag .trade-picks label:has(input:checked) {
+  background: #69745b22;
+}
+.exchange-empty {
+  color: var(--quiet);
+  font-size: 11px;
+}
+.exchange-stock {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+.exchange-stock-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 10px;
+  min-width: 0;
+  border-radius: 3px;
+  background: #f1ead750;
+  transition:
+    background-color 0.25s,
+    border-color 0.25s;
+}
+.exchange-stock-choice .supply-token {
+  gap: 7px;
+  font-size: 12px;
+}
+.exchange-stock-choice small {
+  font:
+    9px "Courier New",
+    monospace;
+  color: var(--quiet);
+}
+.exchange-stock-choice[aria-pressed="true"] {
+  border-color: var(--sage);
+  background: #69745b22;
+  box-shadow: inset 0 0 0 1px #69745b38;
+}
+.trade-footer.exchange-footer {
+  display: grid;
+  grid-template-columns: minmax(145px, 0.8fr) minmax(0, 1.5fr) auto;
+  align-items: center;
+  border-top: 1px solid var(--line);
+  padding: 18px 0;
+}
+.exchange-footer select {
+  min-height: 38px;
+}
+.exchange-receipt,
+.receipt-give,
+.receipt-get {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.receipt-supply {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  max-width: 86px;
+}
+.receipt-supply .supply-label {
+  display: none;
+}
+.receipt-supply small {
+  font-size: 9px;
+  color: var(--quiet);
+  text-align: center;
+  line-height: 1.3;
+}
+.receipt-placeholder {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px dashed #a49c82;
+  color: var(--quiet);
+  border-radius: 3px;
+}
+.receipt-arrow {
+  color: var(--sage);
+  padding: 0 4px;
+}
+.receipt-plus {
+  color: var(--quiet);
+  font-size: 12px;
+}
+.exchange-footer button:disabled {
+  opacity: 0.45;
+}
+@media (max-width: 800px) {
+  .trade-footer.exchange-footer {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .exchange-footer > button {
+    grid-column: 1 / -1;
+    justify-self: end;
+  }
+}
+@media (max-width: 600px) {
+  .exchange-columns {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+  }
+  .exchange-get {
+    padding-top: 18px;
+    border-top: 1px solid var(--line);
+  }
+  .trade-footer.exchange-footer {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .exchange-receipt {
+    padding: 8px 0;
+  }
+  .exchange-footer > button {
+    width: 100%;
+  }
+}
+
+.player-state .condition-status:has(.healing-countdown) {
+  flex-wrap: wrap;
+}
+.healing-countdown {
+  padding: 2px 5px;
+  border-radius: 3px;
+  background: #f4eed8c9;
+  color: var(--ink);
+  font:
+    9px "Courier New",
+    monospace;
+  white-space: nowrap;
+}
+
+.exchange-recipient {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.exchange-recipient > span {
+  font:
+    10px "Courier New",
+    monospace;
+  color: var(--quiet);
+}
+.exchange-recipient-name {
+  font:
+    15px Georgia,
+    serif;
 }

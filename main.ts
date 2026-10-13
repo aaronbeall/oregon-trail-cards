@@ -22,7 +22,7 @@ import "./style.css";
 import { randomName, randomParty, portraitSlots } from "./Party";
 import { gsap } from "gsap";
 import { reconcile } from "./Render";
-import { supplyEmblem, hiddenSupply } from "./Supplies";
+import { supplyEmblem } from "./Supplies";
 import { GameHistory, replayGame, type GameAction } from "./History";
 const key = "oregon-trail-cards.official.v2";
 let saved;
@@ -482,8 +482,17 @@ function playerCalamities() {
   );
   const personal = s.hazards.filter((h) => !wagonKinds.has(h.kind));
   const own = personal.filter((h) => h.owner === s.current);
-  const companions = personal.filter((h) => h.owner !== s.current);
+  const companions = personal.filter(
+    (h) =>
+      h.owner !== s.current &&
+      Object.values(h.needs).some((count) => count! > 0),
+  );
   return `${shared.length ? `<div class="turn-wagon-remedies hazards" aria-label="Wagon remedies">${hazards(shared, false, true)}</div>` : ""}${own.length ? `<div class="turn-calamities hazards" aria-label="Your conditions">${hazards(own, false, true)}</div>` : ""}${companions.length ? `<div class="companion-remedies"><p class="eyebrow">Help a companion</p><div class="hazards">${hazards(companions, true, false, true)}</div></div>` : ""}`;
+}
+function healingCountdown(hazard: Hazard) {
+  if (hazard.kind !== "arm") return "";
+  const turns = hazard.rounds ?? hazard.skip;
+  return `${turns} turn${turns === 1 ? "" : "s"} to heal`;
 }
 function playerCard(index: number, turnPlayer = game.state.current) {
   const s = game.state;
@@ -491,7 +500,7 @@ function playerCard(index: number, turnPlayer = game.state.current) {
   const conditions = s.hazards.filter(
     (h) => h.owner === index && !wagonKinds.has(h.kind),
   );
-  return `<div data-ui-key="player-${index}" class="player ${index === turnPlayer ? "current" : ""} ${!p.alive ? "dead" : conditions.length ? "unwell" : ""}"><div class="player-heading">${portrait(index)}<div><strong>${escape(p.name)} ${!p.alive ? "†" : index === turnPlayer ? '<span class="player-turn-tag">Turn</span>' : ""}</strong><small>${p.alive ? `<button class="player-count" data-player-preview="trail" data-player-index="${index}" aria-label="View ${escape(p.name)}’s trail cards">${p.hand.length} trail</button> · <button class="player-count" data-player-preview="supplies" data-player-index="${index}" aria-label="View ${escape(p.name)}’s supplies">${p.supplies.length} supplies</button>` : escape(p.epitaph)}</small></div></div><div class="player-state" aria-label="${escape(p.name)}’s condition">${(p.alive ? conditions : []).map((h) => `<button class="condition-status" style="--condition-art:url('${calamityArt[h.kind]}')" data-ui-key="condition-${h.id}" data-player-preview="condition" data-player-index="${index}" data-hazard-id="${h.id}" aria-label="${escape(conditionTitle(h.kind, index))}: condition and remedies"><span>${titles[h.kind]}</span></button>`).join("")}${p.alive && !conditions.length ? '<span class="condition-clear">In good health</span>' : ""}</div></div>`;
+  return `<div data-ui-key="player-${index}" class="player ${index === turnPlayer ? "current" : ""} ${!p.alive ? "dead" : conditions.length ? "unwell" : ""}"><div class="player-heading">${portrait(index)}<div><strong>${escape(p.name)} ${!p.alive ? "†" : index === turnPlayer ? '<span class="player-turn-tag">Turn</span>' : ""}</strong><small>${p.alive ? `<button class="player-count" data-player-preview="trail" data-player-index="${index}" aria-label="View ${escape(p.name)}’s trail cards">${p.hand.length} trail</button> · <button class="player-count" data-player-preview="supplies" data-player-index="${index}" aria-label="View ${escape(p.name)}’s supplies">${p.supplies.length} supplies</button>` : escape(p.epitaph)}</small></div></div><div class="player-state" aria-label="${escape(p.name)}’s condition">${(p.alive ? conditions : []).map((h) => `<button class="condition-status" style="--condition-art:url('${calamityArt[h.kind]}')" data-ui-key="condition-${h.id}" data-player-preview="condition" data-player-index="${index}" data-hazard-id="${h.id}" aria-label="${escape(conditionTitle(h.kind, index))}${healingCountdown(h) ? `: ${healingCountdown(h)}` : ""}: condition and remedies"><span>${titles[h.kind]}</span>${healingCountdown(h) ? `<span class="healing-countdown">${healingCountdown(h)}</span>` : ""}</button>`).join("")}${p.alive && !conditions.length ? '<span class="condition-clear">In good health</span>' : ""}</div></div>`;
 }
 function refreshPlayerSummaries(turnPlayer: number) {
   const summaries = app.querySelector(".players");
@@ -1625,10 +1634,85 @@ function trail() {
 }
 function trading() {
   const s = game.state;
-  const shelfKind =
-    (Object.keys(names) as Supply[]).find((kind) => s.shop[kind] > 0) ?? "food";
-  return `<section class="shop ${shopOpen ? "is-open" : ""}"><button data-action="shop" class="shop-toggle" aria-expanded="${shopOpen}" aria-controls="supply-shop-content"><img src="${art.shop}" alt=""><span><span class="eyebrow">A little something for the road</span><strong>Supply shop</strong><small>Trade two for one · no turn used</small></span><span class="shop-chevron" aria-hidden="true">⌄</span></button><div id="supply-shop-content" class="shop-content" ${!shopOpen ? "hidden" : ""}><div class="shop-stock">${(Object.keys(names) as Supply[]).map((k) => `<span class="${!s.shop[k] ? "sold-out" : ""}">${supplyEmblem(k, s.shop[k], true)}</span>`).join("")}</div><p>Two supplies buy one small kindness. Choose your own pair, or one each from two consenting companions.</p><div class="trade-picks">${s.players.flatMap((p, i) => (p.alive ? p.supplies.map((k, j) => `<label><input type="checkbox" name="payment" value="${i}:${j}">${portrait(i)}<span>${escape(p.name)}<small>${i === s.current ? supplyEmblem(k) : hiddenSupply(`Hidden supply ${j + 1}`)}</small></span></label>`) : [])).join("")}</div><div class="trade-footer"><label>Take from the shelf<div class="supply-select"><span class="supply-select-preview">${supplyEmblem(shelfKind)}</span><select id="trade-kind">${(Object.keys(names) as Supply[]).map((k) => `<option value="${k}" ${!s.shop[k] ? "disabled" : ""} ${k === shelfKind ? "selected" : ""}>${names[k]} (${s.shop[k]})</option>`).join("")}</select></div></label><label>For this traveller<div class="recipient-select">${portrait(s.current)}<select id="trade-recipient">${game.living.map((i) => `<option value="${i}" ${i === s.current ? "selected" : ""}>${escape(s.players[i].name)}</option>`).join("")}</select></div></label>${button("trade", "Exchange two supplies")}</div><p id="trade-error" role="status"></p></div></section>`;
+  return `<section class="shop ${shopOpen ? "is-open" : ""}"><button data-action="shop" class="shop-toggle" aria-expanded="${shopOpen}" aria-controls="supply-shop-content"><img src="${art.shop}" alt=""><span><span class="eyebrow">Give 2 → Get 1</span><strong>Supply exchange</strong><small>Any two supplies for one you need · no turn used</small></span><span class="shop-chevron" aria-hidden="true">⌄</span></button><div id="supply-shop-content" class="shop-content" ${!shopOpen ? "hidden" : ""}><div class="exchange-columns"><section class="exchange-give"><div class="exchange-heading"><h3>Give 2</h3><span class="trade-give-count" role="status">0 / 2 selected</span></div><p>Pick any two supplies. One traveller can pay both, or two can share.</p><div class="exchange-bags">${game.living
+    .map((i) => {
+      const p = s.players[i];
+      return `<div class="exchange-bag" data-ui-key="exchange-bag-${i}"><div class="exchange-owner">${portrait(i)}<strong>${escape(p.name)}</strong></div><div class="trade-picks">${p.supplies.map((kind, index) => `<label data-ui-key="payment-${i}-${index}"><input type="checkbox" name="payment" value="${i}:${index}" aria-label="Give ${names[kind]} from ${escape(p.name)}, card ${index + 1}">${supplyEmblem(kind)}</label>`).join("") || '<small class="exchange-empty">No supplies to give.</small>'}</div></div>`;
+    })
+    .join(
+      "",
+    )}</div></section><section class="exchange-get"><div class="exchange-heading"><h3>Get 1</h3><span>From the shop</span></div><p>Choose the supply you want in return.</p><div class="exchange-stock">${(Object.keys(names) as Supply[]).map((kind) => `<button class="exchange-stock-choice" data-shop-supply="${kind}" data-ui-key="shop-choice-${kind}" aria-label="Receive ${names[kind]}, ${s.shop[kind]} available" aria-pressed="false" ${!s.shop[kind] ? "disabled" : ""}>${supplyEmblem(kind)}<small>${s.shop[kind] ? `${s.shop[kind]} available` : "Out of stock"}</small></button>`).join("")}</div><select id="trade-kind" hidden aria-label="Supply to receive"><option value="">Choose a supply</option>${(Object.keys(names) as Supply[]).map((kind) => `<option value="${kind}" ${!s.shop[kind] ? "disabled" : ""}>${names[kind]}</option>`).join("")}</select></section></div><div class="trade-footer exchange-footer"><div class="exchange-recipient"><span id="exchange-recipient-label">Deliver to</span><div class="leader-icons" role="group" aria-labelledby="exchange-recipient-label">${game.living.map((i) => `<button class="leader-icon ${i === s.current ? "selected" : ""}" data-exchange-recipient="${i}" data-ui-key="exchange-recipient-${i}" aria-label="Deliver to ${escape(s.players[i].name)}" aria-pressed="${i === s.current}">${portrait(i)}</button>`).join("")}</div><strong class="exchange-recipient-name">${escape(s.players[s.current].name)}</strong><select id="trade-recipient" hidden aria-label="Supply recipient">${game.living.map((i) => `<option value="${i}" ${i === s.current ? "selected" : ""}>${escape(s.players[i].name)}</option>`).join("")}</select></div><div class="exchange-receipt" aria-live="polite"></div><button data-action="trade" disabled>Exchange supplies →</button></div><p id="trade-error" role="status"></p></div></section>`;
 }
+function updateExchange() {
+  const shop = app.querySelector(".shop");
+  if (!shop) return;
+  const inputs = Array.from(
+    shop.querySelectorAll<HTMLInputElement>('input[name="payment"]'),
+  );
+  const selected = inputs.filter((input) => input.checked);
+  inputs.forEach((input) => {
+    input.disabled = selected.length >= 2 && !input.checked;
+  });
+  shop.querySelector(".trade-give-count")!.textContent =
+    `${selected.length} / 2 selected`;
+  const kind = shop.querySelector<HTMLSelectElement>("#trade-kind")!
+    .value as Supply;
+  const recipient = Number(
+    shop.querySelector<HTMLSelectElement>("#trade-recipient")!.value,
+  );
+  shop
+    .querySelectorAll<HTMLButtonElement>("[data-shop-supply]")
+    .forEach((choice) =>
+      choice.setAttribute(
+        "aria-pressed",
+        String(choice.dataset.shopSupply === kind),
+      ),
+    );
+  shop
+    .querySelectorAll<HTMLButtonElement>("[data-exchange-recipient]")
+    .forEach((choice) => {
+      const chosen = Number(choice.dataset.exchangeRecipient) === recipient;
+      choice.setAttribute("aria-pressed", String(chosen));
+      choice.classList.toggle("selected", chosen);
+    });
+  shop.querySelector(".exchange-recipient-name")!.textContent =
+    game.state.players[recipient].name;
+  const valid =
+    selected.length === 2 &&
+    !!game.state.shop[kind] &&
+    game.state.status === "travel" &&
+    !["legacy", "discard"].includes(game.state.phase);
+  shop.querySelector<HTMLButtonElement>('[data-action="trade"]')!.disabled =
+    !valid;
+  const give = selected.map((input) => {
+    const [owner, index] = input.value.split(":").map(Number);
+    const supply = game.state.players[owner].supplies[index];
+    return supply
+      ? `<span class="receipt-supply">${supplyEmblem(supply)}<small>${escape(game.state.players[owner].name)}</small></span>`
+      : "";
+  });
+  while (give.length < 2)
+    give.push(
+      '<span class="receipt-placeholder" aria-label="Choose a supply to give">?</span>',
+    );
+  shop.querySelector(".exchange-receipt")!.innerHTML =
+    `<div class="receipt-give">${give.join('<span class="receipt-plus" aria-hidden="true">+</span>')}</div><span class="receipt-arrow" aria-hidden="true">→</span><div class="receipt-get">${kind && names[kind] ? `<span class="receipt-supply">${supplyEmblem(kind)}<small>for ${escape(game.state.players[recipient].name)}</small></span>` : '<span class="receipt-placeholder" aria-label="Choose a supply to receive">?</span>'}</div>`;
+}
+app.addEventListener("click", (event) => {
+  const choice = (event.target as Element).closest<HTMLButtonElement>(
+    "[data-shop-supply], [data-exchange-recipient]",
+  );
+  if (!choice || busy || choice.disabled) return;
+  event.stopImmediatePropagation();
+  if (choice.dataset.exchangeRecipient !== undefined)
+    app.querySelector<HTMLSelectElement>("#trade-recipient")!.value =
+      choice.dataset.exchangeRecipient;
+  else
+    app.querySelector<HTMLSelectElement>("#trade-kind")!.value =
+      choice.dataset.shopSupply!;
+  app.querySelector("#trade-error")!.textContent = "";
+  updateExchange();
+});
 function render() {
   hideOutcomeTooltip();
   const s = game.state;
@@ -1679,16 +1763,7 @@ function render() {
       });
   }
   renderedProgress = s.count;
-  const shelf = app.querySelector<HTMLSelectElement>("#trade-kind");
-  const preview = app.querySelector(".supply-select-preview");
-  if (
-    shelf &&
-    preview &&
-    preview
-      .querySelector("[data-supply-kind]")
-      ?.getAttribute("data-supply-kind") !== shelf.value
-  )
-    preview.innerHTML = supplyEmblem(shelf.value as Supply);
+  updateExchange();
   return changed;
 }
 // The six real faces share a cube; the model's roll determines the landing face.
@@ -2582,6 +2657,7 @@ app.addEventListener("click", async (event) => {
     app
       .querySelectorAll<HTMLInputElement>('[name="payment"]:checked')
       .forEach((input) => (input.checked = false));
+    app.querySelector<HTMLSelectElement>("#trade-kind")!.value = "";
   } else if (d.action === "new") {
     if (setup) return;
     confirming = true;
@@ -3202,12 +3278,15 @@ app.addEventListener("input", (event) => {
 });
 app.addEventListener("change", (event) => {
   const select = event.target as HTMLSelectElement;
-  if (select.id === "trade-kind") {
-    app.querySelector(".supply-select-preview")!.innerHTML = supplyEmblem(
-      select.value as Supply,
-    );
+  if (
+    select.id === "trade-kind" ||
+    select.id === "trade-recipient" ||
+    select.name === "payment"
+  ) {
+    app.querySelector("#trade-error")!.textContent = "";
+    updateExchange();
   }
-  if (select.id === "trade-recipient" || select.id.startsWith("heir-")) {
+  if (select.id.startsWith("heir-")) {
     const avatar = select.previousElementSibling!;
     const template = document.createElement("template");
     template.innerHTML = portrait(Number(select.value));

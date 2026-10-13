@@ -36,13 +36,13 @@ Spacebar-marked Trail cards draw Calamities. The drawer is affected unless the c
 | Hunting | Having bullets grants one available Food card; the printed card does not instruct spending the bullets. |
 | Snakebite, Dysentery | Immediate death. |
 
-Supply remedies return supplies to the shop. Partial multi-card remedies remain outstanding. If a player must lose a supply but has none, they select another player’s hidden card without viewing or discussing it. Death allows up to two supplies to be willed to survivors; remaining supplies return to the shop, and the deceased’s Trail cards go to the bottom of the draw pile. Epitaphs can be edited.
+Supply remedies return supplies to the shop. Partial multi-card remedies remain outstanding. Supply losses are selected automatically from the affected player’s actual supply cards; if their bag is empty, the selection comes from the living party’s supplies. Death allows up to two supplies to be willed to survivors; remaining supplies return to the shop, and the deceased’s Trail cards go to the bottom of the draw pile. Epitaphs can be edited.
 
 ## Edition differences and digital conventions
 
 The 2017 rule sheet takes precedence over older printed text: notably the two-player supply deal, the 3/5 river clarification, and Town-only removal of Inadequate Grass. Duplicate grass/water cards remain active after killing the oxen; the resulting replacement requirement is displayed as a separate wagon calamity rather than taking a physical Dead Oxen card from the draw pile.
 
-The rule sheet does not specify what to do if all 32 Calamity cards are exhausted. This app reshuffles remedied/discarded calamities; if none are available, that draw has no effect. This is an explicit digital fallback, not a published rule. Town/Fort supply picks may be declined when the shop cannot provide what the player wants. All effects of the fiftieth card resolve before winning. On-screen hands show only the current player’s supplies; players sharing the device must respect that information boundary themselves.
+The rule sheet does not specify what to do if all 32 Calamity cards are exhausted. This app reshuffles remedied/discarded calamities; if none are available, that draw has no effect. This is an explicit digital fallback, not a published rule. Town/Fort supply picks may be declined when the shop cannot provide what the player wants. All effects of the fiftieth card resolve before winning. Supply hands are public on the shared screen. The Supply exchange groups all living travellers’ supplies and previews the two cards given, the card received, and its recipient before committing the trade. Exchanges do not use a turn.
 
 The previous solo “16 cards / party spirit / automatic provisions” save format is incompatible and is not loaded. The corrected game saves under a separate browser key.
 
