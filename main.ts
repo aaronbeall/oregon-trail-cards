@@ -16,6 +16,7 @@ import {
   type Calamity,
   type Journey,
   type TrailReport,
+  type SupplyLoss,
 } from "./TrailCard";
 import "./style.css";
 import { randomName, randomParty, portraitSlots } from "./Party";
@@ -345,7 +346,7 @@ function conditionDescription(kind: Calamity, owner: number) {
   return personal[kind] ?? hazardText[kind] ?? "";
 }
 function conditionPortrait(kind: Calamity, owner: number) {
-  return wagonKinds.has(kind)
+  return wagonKinds.has(kind) || owner === game.state.current
     ? ""
     : portraitImage(game.state.players[owner].portrait ?? owner % 6);
 }
@@ -396,7 +397,7 @@ function travellerCard(p: { name: string; portrait: number }, i: number) {
   return `<article class="traveller-card" data-ui-key="${partyKeys[i]}" data-traveller="${i}"><span class="eyebrow">Traveller ${i + 1}</span><button class="traveller-remove" data-remove-traveller="${i}" aria-label="Remove ${escape(p.name)} from the wagon" title="${party.length === 2 ? "At least two travellers are needed" : "Remove traveller"}" ${party.length === 2 ? "disabled" : ""}><span aria-hidden="true">×</span></button><div class="traveller-portrait"><div class="portrait-picker" id="portrait-picker-${i}" ${!choosing ? "hidden" : ""} role="group" aria-label="Portraits for traveller ${i + 1}">${portraitSlots.map((slot) => `<button data-portrait="${slot}" data-player="${i}" aria-label="Portrait ${slot + 1} for traveller ${i + 1}" aria-pressed="${p.portrait === slot}" class="${p.portrait === slot ? "selected" : ""}">${portraitImage(slot)}</button>`).join("")}</div><button class="${choosing ? "portrait-picker-close" : "portrait-choice"}" data-picker="${i}" aria-expanded="${choosing}" aria-controls="portrait-picker-${i}" aria-label="${choosing ? "Close portrait selection" : "Choose portrait"} for traveller ${i + 1}">${choosing ? "Done" : `${portraitImage(p.portrait, true)}<span>Choose portrait</span>`}</button></div><label class="traveller-name">Name<input class="player-name" data-player="${i}" value="${escape(p.name)}" maxlength="30" required autocomplete="off"></label><small class="traveller-birthday">Born ${calendarDate(portraitBirthdays[p.portrait])}</small></article>`;
 }
 function leaderPicker() {
-  return `<div class="leader-choice field"><span id="leader-label">Who leads the way?</span><div class="leader-icons" role="group" aria-labelledby="leader-label">${party.map((p, i) => `<button data-leader="${i}" aria-label="Lead with ${escape(p.name)}" aria-pressed="${i === firstPlayer}" class="leader-icon ${i === firstPlayer ? "selected" : ""}">${portraitImage(p.portrait)}</button>`).join("")}</div><strong class="leader-name" aria-live="polite">${escape(party[firstPlayer].name)}</strong><small>The player born nearest Willamette Valley starts.</small></div>`;
+  return `<div class="leader-choice field"><span id="leader-label">Who leads the way?</span><div class="leader-icons" role="group" aria-labelledby="leader-label">${party.map((p, i) => `<button data-leader="${i}" aria-label="Lead with ${escape(p.name)}" aria-pressed="${i === firstPlayer}" class="leader-icon ${i === firstPlayer ? "selected" : ""}">${portraitImage(p.portrait)}</button>`).join("")}</div><strong class="leader-name" aria-live="polite">${escape(party[firstPlayer].name)}</strong></div>`;
 }
 function updateLeader() {
   const current = app.querySelector(".leader-choice");
@@ -433,13 +434,40 @@ function playerCalamities() {
   const companions = personal.filter((h) => h.owner !== s.current);
   return `${shared.length ? `<div class="turn-wagon-remedies hazards" aria-label="Wagon remedies">${hazards(shared, false, true)}</div>` : ""}${own.length ? `<div class="turn-calamities hazards" aria-label="Your conditions">${hazards(own, false, true)}</div>` : ""}${companions.length ? `<div class="companion-remedies"><p class="eyebrow">Help a companion</p><div class="hazards">${hazards(companions, true, false, true)}</div></div>` : ""}`;
 }
-function playerCard(index: number) {
+function playerCard(index: number, turnPlayer = game.state.current) {
   const s = game.state;
   const p = s.players[index];
   const conditions = s.hazards.filter(
     (h) => h.owner === index && !wagonKinds.has(h.kind),
   );
-  return `<div data-ui-key="player-${index}" class="player ${index === s.current ? "current" : ""} ${!p.alive ? "dead" : conditions.length ? "unwell" : ""}"><div class="player-heading">${portrait(index)}<div><strong>${escape(p.name)} ${!p.alive ? "†" : index === s.current ? "←" : ""}</strong><small>${p.alive ? `<button class="player-count" data-player-preview="trail" data-player-index="${index}" aria-label="View ${escape(p.name)}’s trail cards">${p.hand.length} trail</button> · <button class="player-count" data-player-preview="supplies" data-player-index="${index}" aria-label="View ${escape(p.name)}’s supplies">${p.supplies.length} supplies</button>` : escape(p.epitaph)}</small></div></div><div class="player-state" aria-label="${escape(p.name)}’s condition">${(p.alive ? conditions : []).map((h) => `<button class="condition-status" style="--condition-art:url('${calamityArt[h.kind]}')" data-ui-key="condition-${h.id}" data-player-preview="condition" data-player-index="${index}" data-hazard-id="${h.id}" aria-label="${escape(conditionTitle(h.kind, index))}: condition and remedies"><span>${titles[h.kind]}</span></button>`).join("")}${p.alive && !conditions.length ? '<span class="condition-clear">In good health</span>' : ""}</div></div>`;
+  return `<div data-ui-key="player-${index}" class="player ${index === turnPlayer ? "current" : ""} ${!p.alive ? "dead" : conditions.length ? "unwell" : ""}"><div class="player-heading">${portrait(index)}<div><strong>${escape(p.name)} ${!p.alive ? "†" : index === turnPlayer ? "←" : ""}</strong><small>${p.alive ? `<button class="player-count" data-player-preview="trail" data-player-index="${index}" aria-label="View ${escape(p.name)}’s trail cards">${p.hand.length} trail</button> · <button class="player-count" data-player-preview="supplies" data-player-index="${index}" aria-label="View ${escape(p.name)}’s supplies">${p.supplies.length} supplies</button>` : escape(p.epitaph)}</small></div></div><div class="player-state" aria-label="${escape(p.name)}’s condition">${(p.alive ? conditions : []).map((h) => `<button class="condition-status" style="--condition-art:url('${calamityArt[h.kind]}')" data-ui-key="condition-${h.id}" data-player-preview="condition" data-player-index="${index}" data-hazard-id="${h.id}" aria-label="${escape(conditionTitle(h.kind, index))}: condition and remedies"><span>${titles[h.kind]}</span></button>`).join("")}${p.alive && !conditions.length ? '<span class="condition-clear">In good health</span>' : ""}</div></div>`;
+}
+function refreshPlayerSummaries(turnPlayer: number) {
+  const summaries = app.querySelector(".players");
+  if (!summaries) return;
+  const template = document.createElement("template");
+  template.innerHTML = game.state.players
+    .map((_, index) => playerCard(index, turnPlayer))
+    .join("");
+  reconcile(summaries, template.content);
+}
+function reservePlayedTrailTile(played: TrailCard, animate: boolean) {
+  const strip = app.querySelector(".trail-strip");
+  if (!strip) return;
+  const piece = document.createElement("div");
+  piece.className = "trail-piece";
+  if (animate) piece.style.opacity = "0";
+  piece.dataset.uiKey = `trail-step-${played.journeyStep}`;
+  piece.tabIndex = 0;
+  piece.dataset.trailResults = "[]";
+  const artwork = document.createElement("template");
+  artwork.innerHTML = card(played);
+  piece.append(artwork.content);
+  const caption = document.createElement("small");
+  caption.textContent = label(played);
+  piece.append(caption);
+  strip.insertBefore(piece, strip.lastElementChild);
+  return piece;
 }
 type SceneArt = { src: string; alt: string };
 function actionArtwork(): SceneArt | undefined {
@@ -543,7 +571,7 @@ let selectedWillSupply: number | null = null;
 let willMessage = "";
 function memorial(index: number, editable = true) {
   const dead = game.state.players[index];
-  return `<div class="memorial" aria-label="Gravestone for ${escape(dead.name)}"><div class="memorial-stone"><img class="memorial-template" src="${art.tombstone}" alt=""><div class="memorial-inscription"><span class="memorial-rip">R.I.P.</span><h3>${escape(dead.name)}</h3><div class="memorial-dates">${dead.birthday ? `<span>Born ${calendarDate(dead.birthday)}</span>` : ""}<span>${dead.deathDate ? `Died ${calendarDate(dead.deathDate)}` : "Death date not recorded"}</span>${dead.deathDay !== undefined ? `<small>${dead.deathDay} day${dead.deathDay === 1 ? "" : "s"} on the trail</small>` : ""}</div><span class="memorial-rule" aria-hidden="true">✦</span>${editable ? `<label class="memorial-epitaph"><span class="sr-only">Epitaph for ${escape(dead.name)}</span><textarea id="epitaph" rows="3" maxlength="160" placeholder="A few words to remember them by…">${escape(dead.epitaph)}</textarea></label>` : `<p class="memorial-epitaph">${escape(dead.epitaph)}</p>`}</div></div></div>`;
+  return `<div class="memorial" aria-label="Gravestone for ${escape(dead.name)}"><div class="memorial-stone"><img class="memorial-template" src="${art.tombstone}" alt=""><div class="memorial-inscription"><span class="memorial-rip">R.I.P.</span><h3>${escape(dead.name)}</h3><div class="memorial-dates"><span>${dead.birthday ? calendarDate(dead.birthday) : "?"} — ${dead.deathDate ? calendarDate(dead.deathDate) : "?"}</span>${dead.deathDay !== undefined ? `<small>${dead.deathDay} day${dead.deathDay === 1 ? "" : "s"} on the trail</small>` : ""}</div><span class="memorial-rule" aria-hidden="true">✦</span>${editable ? `<label class="memorial-epitaph"><span class="sr-only">Epitaph for ${escape(dead.name)}</span><textarea id="epitaph" rows="3" maxlength="160" placeholder="A few words to remember them by…">${escape(dead.epitaph)}</textarea></label>` : `<p class="memorial-epitaph">${escape(dead.epitaph)}</p>`}</div></div></div>`;
 }
 function willEditor() {
   const s = game.state;
@@ -728,21 +756,6 @@ function decision() {
         : "Leave without supplies",
     );
     text += ` ${s.take} pick${s.take === 1 ? "" : "s"} remaining.`;
-  } else if (s.phase === "discard") {
-    heading = "One supply must go.";
-    text = p.supplies.length
-      ? "Choose one of your supplies to return to the shop."
-      : "Your hand is empty. Choose a hidden supply from another living player, without discussing its contents.";
-    choices = s.players
-      .flatMap((q, i) =>
-        q.alive && (!p.supplies.length || i === s.current)
-          ? q.supplies.map(
-              (k, j) =>
-                `<button data-discard="${j}" data-owner="${i}">${portrait(i)}${i === s.current ? supplyEmblem(k) : `${escape(q.name)} · ${hiddenSupply(`Mystery supply ${j + 1}`)}`}</button>`,
-            )
-          : [],
-      )
-      .join("");
   } else if (s.phase === "legacy") {
     heading = "";
     text =
@@ -778,7 +791,7 @@ function decision() {
               ? "No trail card connects. Use a supply to remedy a calamity, or draw one card and end your turn."
               : "No trail card connects. Draw one card and end your turn.";
   }
-  return `<section class="decision" aria-live="polite"><p class="eyebrow">${s.status === "travel" ? `Turn ${s.turn}` : "Journey’s end"}</p><div class="turn-header"><div class="decision-heading">${portraitImage(s.players[s.phase === "legacy" ? s.deaths[0] : s.current].portrait ?? 0, true)}<h2>${s.phase === "legacy" ? `Farewell, ${escape(s.players[s.deaths[0]].name)}.` : `${escape(p.name)}’s turn`}</h2></div>${s.status === "travel" && s.phase !== "legacy" ? playerSupplies() : ""}</div><div class="turn-state-window"><div class="turn-state" data-ui-key="turn-state"><div class="action-summary">${s.phase !== "legacy" && actionArtwork() ? `<img class="action-artwork" src="${actionArtwork()!.src}" alt="${escape(actionArtwork()!.alt)}">` : ""}<div class="action-copy" data-ui-key="action-copy">${heading ? `<h3>${heading}</h3>${s.phase === "river" ? riverFailureTag(!!game.top?.deadly) : ""}` : ""}<p><span class="decision-text">${escape(text)}</span></p></div></div><div class="choices">${choices}</div>${playerCalamities()}</div></div></section>`;
+  return `<section class="decision" aria-live="polite"><p class="eyebrow">${s.status === "travel" ? `Turn ${s.turn}` : "Journey’s end"}</p><div class="turn-header" data-turn-player="${s.phase === "legacy" ? s.deaths[0] : s.current}"><div class="decision-heading">${portraitImage(s.players[s.phase === "legacy" ? s.deaths[0] : s.current].portrait ?? 0, true)}<h2>${s.phase === "legacy" ? `Farewell, ${escape(s.players[s.deaths[0]].name)}.` : `${escape(p.name)}’s turn`}</h2></div>${s.status === "travel" && s.phase !== "legacy" ? playerSupplies() : ""}</div><div class="turn-state-window"><div class="turn-state" data-ui-key="turn-state"><div class="action-summary">${s.phase !== "legacy" && actionArtwork() ? `<img class="action-artwork" src="${actionArtwork()!.src}" alt="${escape(actionArtwork()!.alt)}">` : ""}<div class="action-copy" data-ui-key="action-copy">${heading ? `<h3>${heading}</h3>${s.phase === "river" ? riverFailureTag(!!game.top?.deadly) : ""}` : ""}<p><span class="decision-text">${escape(text)}</span></p></div></div><div class="choices">${choices}</div>${playerCalamities()}</div></div></section>`;
 }
 function reportFor(c: TrailCard) {
   return c.journeyStep ? game.state.trailReports?.[c.journeyStep] : undefined;
@@ -1273,6 +1286,10 @@ function recordTrailResult(
   played?: TrailCard,
 ) {
   const s = game.state;
+  const automaticLoss =
+    s.lastSupplyLoss?.sequence !== before.lastSupplyLoss?.sequence
+      ? s.lastSupplyLoss
+      : undefined;
   if (played) {
     played.journeyStep = s.count;
     // Seed visible older cards before storing the new visit; snapshots survive deck recycling.
@@ -1357,7 +1374,11 @@ function recordTrailResult(
       .filter((h) => !before.hazards.some((old) => old.id === h.id))
       .forEach((h) => (h.trailStep = step));
   }
-  if (d.discard !== undefined) {
+  if (automaticLoss) {
+    report.losses++;
+    (report.lostSupplies ??= []).push(automaticLoss.supply);
+    (report.lostSupplyOwners ??= []).push(automaticLoss.owner);
+  } else if (d.discard !== undefined) {
     report.losses++;
     const lost = before.players[Number(d.owner)].supplies[Number(d.discard)];
     (report.lostSupplies ??= []).push(lost);
@@ -1404,10 +1425,18 @@ function recordTrailResult(
         deadly: !!previousTop?.deadly,
         calamity: before.pending ? titles[before.pending] : "Wagon repair",
         calamityKind: before.pending ?? undefined,
+        loss: automaticLoss,
       }),
     );
   } else if (played?.type === "calamity") {
-    results.push(calamityResultText(revealedCalamity, s.note, before.current));
+    results.push(
+      calamityResultText(
+        revealedCalamity,
+        s.note,
+        before.current,
+        automaticLoss,
+      ),
+    );
   } else if (d.discard !== undefined || d.take || d.cure || d.town) {
     const result = actionResult(
       d,
@@ -1537,6 +1566,7 @@ type RollContext = {
   deadly: boolean;
   calamity: string;
   calamityKind?: Calamity;
+  loss?: SupplyLoss;
 };
 function deathJourneyText(player: (typeof game.state.players)[number]) {
   return player.deathDate && player.deathDay !== undefined
@@ -1570,8 +1600,8 @@ function rollOutcomeText(
       : result === 1
         ? context.deadly
           ? `${context.traveller} drowned crossing the river${deathJourneyText(game.state.players.find((p) => p.name === context.traveller)!)}.`
-          : phase === "discard"
-            ? "One supply is lost. Choose what to leave behind."
+          : context.loss
+            ? `${game.state.players[context.loss.owner].name} lost ${names[context.loss.supply].toLowerCase()} in the river. The next traveller must try to cross.`
             : "No supplies left to lose. Pass the attempt to the next traveller."
         : "The crossing fails. The next traveller must try their luck.";
 }
@@ -1717,6 +1747,12 @@ async function tumbleDie(result: number, context: RollContext) {
         );
     }
     roll.append(resultHeading, explanation, proceed);
+    if (context.loss) {
+      const lost = document.createElement("div");
+      lost.className = "result-supply";
+      lost.innerHTML = lostSupplyEmblem(context.loss.supply);
+      explanation.after(lost);
+    }
     await new Promise<void>((resolve) => {
       proceed.addEventListener(
         "click",
@@ -1818,7 +1854,7 @@ async function revealActionResult(result: ActionResult) {
       tl.to(state, { y: -28, opacity: 0, duration: 0.24, ease: "power2.in" }),
     );
   const content = document.createElement("template");
-  content.innerHTML = `<div class="action-result"><h3 class="result-heading">${result.owner !== undefined ? portraitImage(game.state.players[result.owner].portrait ?? result.owner % 6) : ""}<span>${escape(result.title)}</span></h3>${result.image ? `<img class="result-artwork" src="${result.image}" alt="${escape(result.title)}">` : ""}${result.drawn ? `<div class="revealed-card">${card(result.drawn)}<strong>${label(result.drawn)}</strong>${result.drawn.type === "river" ? riverFailureTag(!!result.drawn.deadly) : `<p>${description(result.drawn)}</p>`}</div>` : result.visual ? `<div class="result-supply">${result.visual}</div>` : ""}<p class="result-message">${escape(result.text)}</p><button class="result-continue" disabled>Continue →</button></div>`;
+  content.innerHTML = `<div class="action-result"><h3 class="result-heading">${result.owner !== undefined && result.owner !== Number(app.querySelector<HTMLElement>(".turn-header")?.dataset.turnPlayer) ? portraitImage(game.state.players[result.owner].portrait ?? result.owner % 6) : ""}<span>${escape(result.title)}</span></h3>${result.image ? `<img class="result-artwork" src="${result.image}" alt="${escape(result.title)}">` : ""}${result.drawn ? `<div class="revealed-card">${card(result.drawn)}<strong>${label(result.drawn)}</strong>${result.drawn.type === "river" ? riverFailureTag(!!result.drawn.deadly) : `<p>${description(result.drawn)}</p>`}</div>` : result.visual ? `<div class="result-supply">${result.visual}</div>` : ""}<p class="result-message">${escape(result.text)}</p><button class="result-continue" disabled>Continue →</button></div>`;
   reconcile(state, content.content);
   gsap.set(state, { clearProps: "opacity,transform" });
   if (!reducedMotion.matches)
@@ -1863,13 +1899,16 @@ function calamityResultText(
   kind: Calamity | undefined,
   note: string,
   owner: number,
+  loss?: SupplyLoss,
 ) {
   return kind === "snake" || kind === "dysentery"
     ? `${game.state.players[owner].name} died of ${titles[kind]}${deathJourneyText(game.state.players[owner])}. Their remaining supplies may be willed to companions.`
     : kind === "hunting"
       ? note
       : kind === "thief"
-        ? `A thief struck while ${game.state.players[owner].name} was minding the wagon. One supply is gone. Choose what was stolen after continuing.`
+        ? loss
+          ? `A thief struck while ${game.state.players[owner].name} was minding the wagon. ${game.state.players[loss.owner].name} lost ${names[loss.supply].toLowerCase()}.`
+          : note
         : kind && ["axle", "tongue", "wheel"].includes(kind)
           ? "The wagon needs a repair. Try your luck after continuing."
           : kind
@@ -1881,6 +1920,7 @@ async function revealCalamity(
   note: string,
   casualties: string[],
   owner: number,
+  loss?: SupplyLoss,
 ) {
   const state = app.querySelector<HTMLElement>(".turn-state");
   if (!state) return;
@@ -1888,10 +1928,11 @@ async function revealCalamity(
     await playTimeline((tl) =>
       tl.to(state, { y: -28, opacity: 0, duration: 0.24, ease: "power2.in" }),
     );
-  const details = calamityResultText(kind, note, owner);
+  const details = calamityResultText(kind, note, owner, loss);
+  const death = casualties.includes(game.state.players[owner].name);
   const image = kind ? calamityArt[kind] : undefined;
   const content = document.createElement("template");
-  content.innerHTML = `<div class="calamity-result"><div class="action-summary">${image ? `<img class="action-artwork" src="${image}" alt="${titles[kind!]}">` : ""}<div class="action-copy"><h3 class="result-heading">${kind ? conditionPortrait(kind, owner) : ""}<span>${escape(kind ? conditionTitle(kind, owner) : "No calamity")}</span></h3><p class="result-message">${escape(details)}</p>${casualties.length ? `<p class="calamity-casualties">${casualties.map(escape).join(", ")} ${casualties.length === 1 ? "has" : "have"} died.</p>` : ""}</div></div><button class="calamity-continue">Continue →</button></div>`;
+  content.innerHTML = `<div class="calamity-result"><div class="action-summary">${image ? `<img class="action-artwork" src="${image}" alt="${titles[kind!]}">` : ""}<div class="action-copy"><h3 class="result-heading">${death ? `<img class="result-death-icon" src="${art.tombstoneIcon}" alt="" aria-hidden="true">` : ""}<span>${escape(kind ? conditionTitle(kind, owner) : "No calamity")}</span></h3><p class="result-message">${escape(details)}</p>${loss ? `<div class="result-supply">${lostSupplyEmblem(loss.supply)}</div>` : ""}${casualties.length ? `<p class="calamity-casualties">${casualties.map(escape).join(", ")} ${casualties.length === 1 ? "has" : "have"} died.</p>` : ""}</div></div><button class="calamity-continue">Continue →</button></div>`;
   reconcile(state, content.content);
   gsap.set(state, { clearProps: "opacity,transform" });
   if (!reducedMotion.matches)
@@ -2381,6 +2422,12 @@ app.addEventListener("click", async (event) => {
     return;
   }
   setBusy(true);
+  const automaticLoss =
+    game.state.lastSupplyLoss?.sequence !==
+    beforeResult.lastSupplyLoss?.sequence
+      ? game.state.lastSupplyLoss
+      : undefined;
+  rollContext.loss = automaticLoss;
   recordTrailResult(d, beforeResult, playedCard);
   const shouldScrollTrail =
     d.play !== undefined ||
@@ -2390,6 +2437,13 @@ app.addEventListener("click", async (event) => {
     JSON.stringify(game.state.trailReports ?? {}) !==
       JSON.stringify(beforeResult.trailReports ?? {});
   persist(action);
+  refreshPlayerSummaries(previousPlayer);
+  const pendingTile = playedCard
+    ? reservePlayedTrailTile(
+        playedCard,
+        !!pickupSource && !reducedMotion.matches,
+      )
+    : undefined;
   try {
     if (
       shouldScrollTrail &&
@@ -2398,33 +2452,9 @@ app.addEventListener("click", async (event) => {
       await scrollTrailToEnd();
     if (pickupSource && !reducedMotion.matches) {
       let destination: Element | null = null;
-      if (d.play !== undefined) {
-        const strip = app.querySelector(".trail-strip");
-        if (strip) {
-          const piece = document.createElement("div");
-          piece.className = "trail-piece";
-          piece.style.opacity = "0";
-          piece.dataset.uiKey = `trail-step-${playedCard!.journeyStep}`;
-          piece.tabIndex = 0;
-          piece.dataset.trailResults = JSON.stringify(
-            reportFor(playedCard!)?.results ?? [],
-          );
-          const artwork = document.createElement("template");
-          artwork.innerHTML = card(
-            playedCard!,
-            reportArtwork(reportFor(playedCard!)),
-          );
-          piece.append(artwork.content);
-          const badge = document.createElement("template");
-          badge.innerHTML = trailPlayerBadge(reportFor(playedCard!));
-          piece.append(badge.content);
-          const caption = document.createElement("small");
-          caption.textContent = trailCaption(playedCard!);
-          piece.append(caption);
-          strip.insertBefore(piece, strip.lastElementChild);
-          await scrollTrailToEnd();
-          destination = piece.firstElementChild;
-        }
+      if (d.play !== undefined && pendingTile) {
+        await scrollTrailToEnd();
+        destination = pendingTile.firstElementChild;
       } else if (d.take) {
         const bag = app.querySelector(".supply-hand > div");
         if (bag) {
@@ -2468,6 +2498,7 @@ app.addEventListener("click", async (event) => {
           .filter((p, i) => previousSurvivors[i] && !p.alive)
           .map((p) => p.name),
         previousPlayer,
+        automaticLoss,
       );
     const hadDiceResult = pendingRolls.length > 0;
     for (const n of pendingRolls.splice(0)) await tumbleDie(n, rollContext);
@@ -2636,6 +2667,11 @@ app.addEventListener("change", (event) => {
   }
 });
 restoreTimelineOwners();
+if (game.state.phase === "discard") {
+  const before = structuredClone(game.state);
+  if (game.autoDiscardSupply())
+    recordTrailResult({ action: "auto-loss" }, before);
+}
 if (saved) persist();
 setBusy(false);
 render();

@@ -2840,3 +2840,10 @@ button.wagon-condition:focus-visible {
   background: #69745b12;
   outline: 1px solid var(--line);
 }
+
+.result-death-icon {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  object-fit: contain;
+}

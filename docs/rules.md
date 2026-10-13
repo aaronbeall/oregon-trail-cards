@@ -47,3 +47,5 @@ The rule sheet does not specify what to do if all 32 Calamity cards are exhauste
 The previous solo “16 cards / party spirit / automatic provisions” save format is incompatible and is not loaded. The corrected game saves under a separate browser key.
 
 The digital trail is continuous: every card connects to the last card played. Five-card piles and milestones are omitted. Earlier physical cards recycle when the deck is empty; immutable visit snapshots keep the complete trail visible.
+
+Supply losses resolve automatically in this digital version: choose a random card from the affected player’s supplies, or from all living companions’ supply cards if their bag is empty. The exact lost supply is revealed before continuing; there is no selection step or second die roll.

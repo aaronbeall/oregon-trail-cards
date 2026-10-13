@@ -153,15 +153,16 @@ test("failed crossings pass players without laying cards; all rolls emit animati
   assert.equal(g.state.phase, "turn");
   assert.deepEqual(rolls, [3, 4]);
 });
-test("river one loses supply; blind discard when own bag empty", () => {
+test("river one automatically loses another living player’s supply when own bag is empty", () => {
   const g = fresh(2, () => 0);
   g.player.hand = [card("river")];
   g.player.supplies = [];
   g.state.players[1].supplies = ["food"];
   g.play(0);
   g.cross();
-  assert.equal(g.state.phase, "discard");
-  assert.equal(g.discardSupply(1, 0), true);
+  assert.equal(g.state.lastSupplyLoss.owner, 1);
+  assert.equal(g.state.lastSupplyLoss.supply, "food");
+  assert.equal(g.state.players[1].supplies.length, 0);
   assert.equal(g.state.current, 1);
   assert.equal(g.state.phase, "river");
 });
@@ -625,4 +626,31 @@ test("portrait birthdays and fictional journey dates persist through death and r
   );
   assert.equal(restored.state.players[0].deathDate, "1847-04-13");
   assert.equal(restored.state.players[0].birthday, portraitBirthdays[0]);
+});
+
+test("automatic losses sample actual supply cards and preserve the result for replay", () => {
+  const g = fresh(3);
+  g.player.supplies = ["food", "medicine", "water"];
+  g.player.hand = [card("river")];
+  g.play(0);
+  const draws = [0, 0.99];
+  g.random = () => draws.shift();
+  g.cross();
+  assert.equal(g.state.phase, "river");
+  assert.deepEqual(g.state.players[0].supplies, ["food", "medicine"]);
+  assert.equal(g.state.lastSupplyLoss.supply, "water");
+  assert.equal(g.state.lastSupplyLoss.reason, "river");
+  g.random = () => 0.5;
+  g.cross();
+  g.player.supplies = ["parts", "medicine"];
+  g.random = () => 0;
+  calamity(g, "thief");
+  assert.equal(g.state.phase, "turn");
+  assert.equal(g.state.lastSupplyLoss.supply, "parts");
+  assert.equal(g.state.lastSupplyLoss.reason, "thief");
+  assert.equal(g.state.lastSupplyLoss.sequence, 2);
+  assert.deepEqual(
+    readSave(JSON.stringify(g.state)).lastSupplyLoss,
+    g.state.lastSupplyLoss,
+  );
 });

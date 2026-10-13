@@ -141,6 +141,12 @@ export type Phase =
   | "stack"
   | "discard"
   | "legacy";
+export type SupplyLoss = {
+  sequence: number;
+  owner: number;
+  supply: Supply;
+  reason: "river" | "thief";
+};
 export type Journey = {
   version: 2;
   players: Player[];
@@ -168,6 +174,7 @@ export type Journey = {
   started: boolean;
   startDate?: string;
   trailReports?: Record<number, TrailReport>;
+  lastSupplyLoss?: SupplyLoss;
 };
 export function ends(c: TrailCard): [Position, Position] {
   return c.rotated
@@ -813,7 +820,33 @@ export class TrailGame {
         s.pending = null;
         this.finishCard();
       }
-    } else s.phase = "discard";
+    } else {
+      s.phase = "discard";
+      this.autoDiscardSupply();
+    }
+  }
+  autoDiscardSupply() {
+    if (this.state.phase !== "discard") return false;
+    const candidates = (
+      this.player.supplies.length ? [this.state.current] : this.living
+    ).flatMap((owner) =>
+      this.state.players[owner].supplies.map((_, index) => ({ owner, index })),
+    );
+    if (!candidates.length) {
+      const thief = this.state.pending === "thief";
+      this.state.pending = null;
+      this.state.note = "No supplies remain to lose.";
+      if (thief) {
+        this.state.discarded.push("thief");
+        this.finishCard();
+      } else {
+        this.state.phase = "river";
+        this.endTurn();
+      }
+      return true;
+    }
+    const selected = candidates[Math.floor(this.random() * candidates.length)];
+    return this.discardSupply(selected.owner, selected.index);
   }
   discardSupply(owner: number, index: number) {
     const s = this.state;
@@ -826,8 +859,14 @@ export class TrailGame {
       return false;
     const k = s.players[owner].supplies.splice(index, 1)[0];
     s.shop[k]++;
-    s.note = `A supply was lost. The wagon carries on.`;
     const thief = s.pending === "thief";
+    s.lastSupplyLoss = {
+      sequence: (s.lastSupplyLoss?.sequence ?? 0) + 1,
+      owner,
+      supply: k,
+      reason: thief ? "thief" : "river",
+    };
+    s.note = `${s.players[owner].name} lost ${names[k].toLowerCase()} ${thief ? "to a thief" : "in the river"}.`;
     s.pending = null;
     if (thief) {
       s.discarded.push("thief");
