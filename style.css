@@ -2973,20 +2973,33 @@ button.wagon-condition:focus-visible {
 }
 .drawn-card-rotor {
   display: grid;
+  height: 280px;
+  grid-template-rows: minmax(0, 1fr);
   transform-style: preserve-3d;
   transform-origin: center;
 }
 .drawn-card-front,
 .drawn-card-back {
   grid-area: 1 / 1;
+  min-height: 0;
+  box-sizing: border-box;
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
 }
 .drawn-card-front {
+  display: flex;
+  flex-direction: column;
   transform: rotateY(180deg);
   border: 1px solid var(--line);
   padding: 6px;
   background: var(--paper);
+}
+.drawn-card-front > .card-art {
+  flex: 0 0 auto;
+}
+.drawn-card-front > p {
+  min-height: 0;
+  overflow-y: auto;
 }
 .drawn-card-back {
   position: relative;
@@ -3990,4 +4003,32 @@ button.wagon-condition:focus-visible {
 }
 .settlement-stubs path {
   stroke-linecap: round;
+}
+
+.settlement-options {
+  width: 100%;
+  display: grid;
+  gap: 20px;
+}
+.settlement-options h4 {
+  margin: 0 0 10px;
+  color: var(--quiet);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.settlement-remedies {
+  padding: 16px;
+  border: 1px solid #aa8b4f45;
+  border-radius: 4px;
+  background: #aa8b4f0d;
+}
+.settlement-departure {
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.settlement-departure button {
+  background: transparent;
+  color: var(--quiet);
 }

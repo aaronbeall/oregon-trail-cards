@@ -263,6 +263,25 @@ test("cholera duplicates kill the original sufferer; arm sits out two rounds", (
   }
   assert.equal(a.state.hazards.length, 0);
 });
+test("a town can clear inadequate grass instead of taking a supply", () => {
+  const g = fresh();
+  calamity(g, "grass");
+  const grass = g.state.hazards.find((h) => h.kind === "grass");
+  assert.ok(grass);
+  const supplies = g.state.players.map((p) => [...p.supplies]);
+  const shop = { ...g.state.shop };
+  g.player.hand = [card("town")];
+  assert.equal(g.play(0), true);
+  assert.equal(g.state.phase, "town");
+  assert.ok(g.state.hazards.some((h) => h.id === grass.id));
+  assert.equal(g.townCure(grass.id), true);
+  assert.equal(g.state.hazards.some((h) => h.id === grass.id), false);
+  assert.ok(g.state.discarded.includes("grass"));
+  assert.equal(g.state.phase, "turn");
+  assert.deepEqual(g.state.players.map((p) => p.supplies), supplies);
+  assert.deepEqual(g.state.shop, shop);
+});
+
 test("town and fort take only available stock; trading is atomic and no turn consumed", () => {
   const g = fresh();
   g.player.hand = [card("fort")];

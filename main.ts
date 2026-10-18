@@ -927,25 +927,27 @@ function decision() {
       s.phase === "town"
         ? "Take one supply from the shop OR remove one active calamity."
         : "Take two available supplies from the shop.";
-    choices = (Object.keys(names) as Supply[])
+    const supplyChoices = (Object.keys(names) as Supply[])
       .map(
         (k) =>
           `<button data-take="${k}" ${!s.shop[k] ? "disabled" : ""}>${supplyEmblem(k, s.shop[k], true)}</button>`,
       )
       .join("");
-    if (s.phase === "town")
-      choices += s.hazards
-        .map(
-          (h) =>
-            `<button data-town="${h.id}">${actionIcon("remove")}<span>Remove ${titles[h.kind]}</span></button>`,
-        )
-        .join("");
-    choices += turnButton(
+    const remedies =
+      s.phase === "town"
+        ? s.hazards
+            .map(
+              (h) =>
+                `<button data-town="${h.id}">${actionIcon("remove")}<span>Remove ${titles[h.kind]}</span></button>`,
+            )
+            .join("")
+        : "";
+    choices = `<div class="settlement-options"><section class="settlement-supplies" aria-label="Available supplies"><h4>Supplies</h4><div class="choices">${supplyChoices}</div></section>${remedies ? `<section class="settlement-remedies" aria-label="Town remedies"><h4>Or remedy a calamity</h4><div class="choices">${remedies}</div></section>` : ""}<div class="settlement-departure">${turnButton(
       "leave",
       s.phase === "fort" && s.take < 2
         ? "Leave with what you have"
         : "Leave without supplies",
-    );
+    )}</div></div>`;
     text += ` ${s.take} pick${s.take === 1 ? "" : "s"} remaining.`;
   } else if (s.phase === "legacy") {
     heading = "";
@@ -2486,7 +2488,14 @@ function actionResult(
     const h = before.hazards.find((h) => h.id === Number(d.cure ?? d.town));
     if (!h) return;
     const remaining = game.state.hazards.find((x) => x.id === h.id);
+    if (d.town && h.kind === "grass")
+      return {
+        title: "Fresh grazing for the oxen",
+        image: art.town,
+        text: "The town has pasture to spare. The oxen fill their bellies, and one Inadequate Grass condition is removed from the wagon.",
+      };
     return {
+      image: d.town ? calamityArt[h.kind] : undefined,
       owner: wagonKinds.has(h.kind) ? undefined : h.owner,
       title: remaining
         ? wagonKinds.has(h.kind)
