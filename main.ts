@@ -1075,8 +1075,10 @@ function timelineDescription(
   card?: TrailCard,
 ) {
   if (card?.type === "river") {
+    const result = report?.results?.at(-1);
+    if (result && (report?.attempts || report?.scene)) return result;
     if (report?.scene === "success")
-      return `The wagon reaches the far bank after ${report.attempts ?? 1} crossing attempt${report.attempts === 1 || !report.attempts ? "" : "s"}.`;
+      return crossingSuccessText(report.attempts ?? 1);
     if (report?.attempts)
       return "The crossing fails. The wagon remains on this bank of the river.";
     return card.deadly
@@ -1139,7 +1141,7 @@ function trailReportTitle(report: TrailReport | undefined, c?: TrailCard) {
       return "River crossing";
     if (report.scene === "success") {
       const attempts = report.attempts ?? 1;
-      return `River cross (${attempts} ${attempts === 1 ? "attempt" : "attempts"})`;
+      return `River crossing (${attempts} ${attempts === 1 ? "attempt" : "attempts"})`;
     }
     if (
       ["attempt", "loss", "drowning"].includes(report.scene ?? "") ||
@@ -1509,7 +1511,7 @@ function recordTrailResult(
     report.attempts = (report.attempts ?? 0) + 1;
     report.title =
       n % 2 === 0
-        ? `River cross (${report.attempts} ${report.attempts === 1 ? "attempt" : "attempts"})`
+        ? `River crossing (${report.attempts} ${report.attempts === 1 ? "attempt" : "attempts"})`
         : "River crossing failed";
     report.scene =
       n % 2 === 0
