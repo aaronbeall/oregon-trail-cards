@@ -1129,7 +1129,7 @@ select:focus-visible {
 }
 .player-heading {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 9px;
 }
 .player-heading > .portrait {
@@ -2787,8 +2787,7 @@ button:has(> .action-icon) {
   cursor: pointer;
 }
 
-.traveller-birthday,
-.tooltip-birthday {
+.traveller-birthday {
   display: block;
   margin: 8px 0 0;
   color: var(--quiet);
@@ -3593,4 +3592,402 @@ button.wagon-condition:focus-visible {
   font:
     15px Georgia,
     serif;
+}
+
+.stats-outcome-tag {
+  padding: 3px 5px;
+  border-radius: 3px;
+  font-size: 9px;
+}
+.stats-tag-won {
+  color: #3c5941;
+  background: #667d5924;
+}
+.stats-tag-lost {
+  color: #854934;
+  background: #a86d5324;
+}
+.stats-tag-abandoned {
+  color: #675e47;
+  background: #a69b8330;
+}
+.stats-tag-travel {
+  color: #3c6565;
+  background: #6f909026;
+}
+.stats-empty {
+  padding: 48px 20px;
+  text-align: center;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+.stats-empty img {
+  width: 128px;
+}
+.stats-empty h3 {
+  font:
+    24px Georgia,
+    serif;
+  margin: 20px 0 12px;
+}
+.stats-empty p {
+  color: var(--quiet);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.stats-empty button {
+  margin-top: 12px;
+}
+.stats-grave {
+  display: block;
+  width: 25px;
+  height: 25px;
+  object-fit: contain;
+}
+
+.header-actions .header-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  padding: 8px;
+  border-radius: 3px;
+  background: #f1ead730;
+}
+.header-icon svg {
+  width: 21px;
+  height: 21px;
+}
+.header-actions .header-icon[aria-pressed="true"] {
+  background: #69745b22;
+  border-color: var(--sage);
+}
+.journey-browser {
+  padding: 24px 0;
+}
+.journey-browser-heading {
+  margin-bottom: 24px;
+}
+.journey-browser-heading h2 {
+  font:
+    26px Georgia,
+    serif;
+  outline: none;
+}
+.journey-browser-heading p {
+  color: var(--quiet);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.journey-list {
+  display: grid;
+  gap: 10px;
+}
+.journey-list-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 20px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 18px;
+  background: #f1ead74d;
+}
+.journey-list-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+.journey-list-title h3 {
+  margin: 0;
+  font:
+    20px Georgia,
+    serif;
+}
+.journey-current-tag {
+  color: var(--quiet);
+  font:
+    9px "Courier New",
+    monospace;
+}
+.journey-list-copy > p {
+  margin: 10px 0;
+  color: var(--quiet);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.journey-list-party {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.journey-list-party > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font:
+    11px Georgia,
+    serif;
+}
+.journey-list-party .portrait,
+.journey-list-party .stats-grave {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+}
+.journey-list-open {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+.journey-list-open small {
+  color: var(--quiet);
+  font-size: 11px;
+}
+.journey-list-open button {
+  white-space: nowrap;
+}
+.journey-open-error {
+  color: #854934;
+  font-size: 13px;
+}
+@media (max-width: 700px) {
+  header:has(.header-icon) {
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+  header:has(.header-icon) .header-actions {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+}
+@media (max-width: 500px) {
+  .journey-list-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+    padding: 15px;
+  }
+  .journey-list-open {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+}
+
+.player-inventory {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px 7px;
+  margin-top: 8px;
+}
+.inventory-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+.player-inventory .inventory-stack {
+  position: relative;
+  display: block;
+  width: 24px;
+  height: 29px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  border-radius: 2px;
+}
+.inventory-layers {
+  position: absolute;
+  inset: 0 2px 3px 0;
+}
+.inventory-layer {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  transform: translate(
+    calc(var(--inventory-layer) * 1.5px),
+    calc(var(--inventory-layer) * -1.5px)
+  );
+  border: 1px solid #a69c80;
+  border-radius: 2px;
+  background: var(--paper);
+  box-shadow: 0 1px 1px #41483b18;
+}
+.inventory-layer > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.inventory-layer .supply-label {
+  display: none;
+}
+.inventory-layer .supply-token {
+  gap: 0;
+}
+.inventory-layer .supply-stack {
+  width: 18px;
+  height: 21px;
+}
+.inventory-layer .supply-seal {
+  border-radius: 2px;
+}
+.inventory-layer .supply-seal svg {
+  width: 14px;
+  height: 14px;
+}
+.inventory-count {
+  position: absolute;
+  right: -4px;
+  bottom: -3px;
+  min-width: 12px;
+  padding: 1px 2px;
+  border: 1px solid var(--paper);
+  border-radius: 2px;
+  background: #5c6850;
+  color: #fff8e5;
+  text-align: center;
+  font:
+    9px "Courier New",
+    monospace;
+  line-height: 1;
+}
+.player-inventory .inventory-stack:hover,
+.player-inventory .inventory-stack:focus-visible {
+  outline: 1px solid var(--sage);
+  outline-offset: 3px;
+}
+.player-inventory .inventory-empty {
+  color: var(--quiet);
+  font:
+    9px "Courier New",
+    monospace;
+  border-bottom: 0;
+}
+
+.timeline-supply-change {
+  position: relative;
+  display: inline-flex;
+}
+.supply-change-bubble {
+  position: absolute;
+  right: -4px;
+  top: -3px;
+  z-index: 6;
+  width: 12px;
+  height: 12px;
+  border: 0;
+  border-radius: 2px;
+  color: #fff8e5;
+  font-size: 0;
+  background: #955d47;
+}
+.supply-change-bubble::before,
+.timeline-supply-change.gain .supply-change-bubble::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 6px;
+  height: 1.2px;
+  border-radius: 0.5px;
+  background: currentColor;
+}
+.timeline-supply-change.gain .supply-change-bubble::after {
+  width: 1.2px;
+  height: 6px;
+}
+.timeline-supply-change.gain .supply-change-bubble {
+  background: #58724f;
+}
+
+.player-inventory .inventory-supply {
+  display: inline-flex;
+  align-items: center;
+  width: auto;
+  min-width: 24px;
+  height: 29px;
+}
+.inventory-supply .supply-token {
+  gap: 0;
+}
+.inventory-supply .supply-label {
+  display: none;
+}
+.inventory-supply .supply-stack {
+  width: 24px;
+  height: 24px;
+  margin-right: calc((var(--supply-layers, 1) - 1) * 1.5px);
+}
+.inventory-supply .supply-seal svg {
+  width: 17px;
+  height: 17px;
+}
+.inventory-count {
+  right: -3px;
+  bottom: -1px;
+  min-width: 16px;
+  padding: 1px 3px;
+  border: 0;
+  border-radius: 3px;
+  background: var(--ink);
+  color: var(--paper);
+  font:
+    bold 10px/1.3 "Courier New",
+    monospace;
+}
+
+.player .player-birthday {
+  margin-top: 5px;
+  color: var(--quiet);
+  font-size: 9px;
+}
+.player > .player-inventory {
+  margin-top: 8px;
+}
+.player > .player-epitaph {
+  margin-top: 10px;
+}
+
+.player-inventory > .inventory-group {
+  display: contents;
+}
+
+.inventory-supply .supply-seal {
+  transform: translate(
+    calc(var(--layer, 0) * 1.5px),
+    calc(var(--layer, 0) * -1.5px)
+  );
+}
+.player-inventory + .player-state {
+  margin-top: 8px;
+}
+
+.timeline-turn-context {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 10px;
+  color: var(--quiet);
+  font-size: 11px;
+}
+.timeline-turn-context .portrait {
+  width: 27px;
+  height: 27px;
+  flex: 0 0 27px;
+}
+
+.settlement-stubs {
+  pointer-events: none;
+}
+.settlement-stubs path {
+  stroke-linecap: round;
 }

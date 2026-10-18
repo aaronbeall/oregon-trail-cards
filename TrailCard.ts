@@ -58,6 +58,7 @@ export const titles: Record<Calamity, string> = {
 };
 export type TrailReport = {
   card?: TrailCard;
+  playedBy?: number;
   title: string;
   scene?: "success" | "loss" | "drowning" | "attempt" | "restored";
   calamity?: Calamity;

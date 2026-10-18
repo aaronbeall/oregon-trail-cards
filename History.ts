@@ -135,6 +135,23 @@ export class GameHistory {
     );
     if (current) this.last = replayGame(current);
   }
+  /** Switch active games without creating a new archive entry or mixing histories. */
+  select(id: string): Journey | undefined {
+    const archive = structuredClone(this.archive);
+    const selected = archive.games.find((game) => game.id === id);
+    if (!selected) return;
+    const state = replayGame(selected);
+    if (selected.outcome === "abandoned" && state.status === "travel") {
+      selected.outcome = "travel";
+      delete selected.endedAt;
+    }
+    archive.active = id;
+    this.storage.setItem(HISTORY_KEY, JSON.stringify(archive));
+    this.archive = archive;
+    this.last = structuredClone(state);
+    this.dirty = false;
+    return state;
+  }
   capture(state: Journey, action: GameAction = { type: "resume" }) {
     if (!state.started) return;
     const current = this.archive.games.find(

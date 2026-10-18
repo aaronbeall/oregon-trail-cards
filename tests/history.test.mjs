@@ -175,3 +175,56 @@ test("corrupt archives are not silently overwritten", () => {
   };
   assert.throws(() => new GameHistory(storage));
 });
+
+test("selecting an archived journey resumes its own history without mixing games", () => {
+  const { game, history, storage } = setup();
+  const first = history.archive.active;
+  const original = structuredClone(game.state);
+  game.reset(["Daisy", "Florence", "Hugo"]);
+  history.capture(game.state, { type: "start" });
+  const second = history.archive.active;
+  const next = structuredClone(game.state);
+  assert.equal(history.archive.games[0].outcome, "abandoned");
+  const resumed = history.select(first);
+  assert.deepEqual(resumed, original);
+  assert.equal(history.archive.games[0].outcome, "travel");
+  assert.equal(history.archive.games[0].endedAt, undefined);
+  resumed.note = "The old wagon continues.";
+  history.capture(resumed, { type: "resume-test" });
+  assert.equal(history.archive.games[0].events.length, 1);
+  assert.equal(history.archive.games[1].events.length, 0);
+  assert.deepEqual(history.select(second), next);
+  assert.equal(history.archive.games[0].outcome, "travel");
+  const reloaded = new GameHistory(storage);
+  assert.equal(reloaded.archive.active, second);
+  assert.equal(
+    replayGame(reloaded.archive.games[0]).note,
+    "The old wagon continues.",
+  );
+});
+test("viewing a completed journey preserves its outcome and avoids new events", () => {
+  const { game, history } = setup();
+  game.state.status = "won";
+  game.state.count = 50;
+  history.capture(game.state, { type: "finish" });
+  const first = history.archive.active;
+  const record = structuredClone(history.archive.games[0]);
+  game.reset(["Daisy", "Florence", "Hugo"]);
+  history.capture(game.state, { type: "start" });
+  const state = history.select(first);
+  history.capture(state, { type: "open-journey" });
+  assert.deepEqual(history.archive.games[0], record);
+});
+test("failed or unknown journey selection leaves archive untouched", () => {
+  const { history, storage } = setup();
+  const before = structuredClone(history.archive);
+  assert.equal(history.select("missing"), undefined);
+  assert.deepEqual(history.archive, before);
+  const write = storage.setItem;
+  storage.setItem = () => {
+    throw new Error("Storage full");
+  };
+  assert.throws(() => history.select(before.active), /Storage full/);
+  assert.deepEqual(history.archive, before);
+  storage.setItem = write;
+});

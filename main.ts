@@ -31,7 +31,7 @@ try {
 } catch {}
 const pendingRolls: number[] = [];
 let revealedCalamity: Calamity | undefined;
-const game = new TrailGame(
+let game = new TrailGame(
   Math.random,
   saved,
   (n) => pendingRolls.push(n),
@@ -117,6 +117,9 @@ const calamityArt: Record<Calamity, string> = {
   snake: new URL("./assets/calamity-snake.webp", import.meta.url).href,
   dysentery: new URL("./assets/calamity-dysentery.webp", import.meta.url).href,
 };
+let showJourneys = false;
+let journeyOpenError = "";
+let journeyScroll = 0;
 let setup = !game.state.started,
   confirming = false,
   shopOpen = false,
@@ -254,6 +257,14 @@ async function flyPickup(
     border: `0px solid ${landingStyle.borderLeftColor}`,
     background: supply ? "transparent" : landingStyle.backgroundColor,
   });
+  const landingStubs = !supply
+    ? (target.querySelector(".settlement-stubs")?.cloneNode(true) as
+        SVGElement | undefined)
+    : undefined;
+  if (landingStubs) {
+    landingStubs.style.opacity = "0";
+    copy.append(landingStubs);
+  }
   document.body.append(copy);
   const destination = target as HTMLElement;
   const origin = source as HTMLElement;
@@ -265,6 +276,7 @@ async function flyPickup(
   const positionFlight = () => {
     const to = landingRect();
     const p = flight.progress;
+    if (landingStubs) landingStubs.style.opacity = String(p);
     const startLeft = from.left - (window.scrollX - startScroll.x);
     const startTop = from.top - (window.scrollY - startScroll.y);
     Object.assign(copy.style, {
@@ -347,8 +359,43 @@ function route(c: TrailCard) {
     return `<span class="any-road">${c.type === "town" ? "TOWN" : "FORT"}</span>`;
   return `<div class="road-rotation"><svg class="road" viewBox="0 0 120 72" role="img" aria-label="${universal ? "Connects any road" : `Road enters ${["top", "middle", "bottom"][a]} edge and leaves ${["top", "middle", "bottom"][b]} edge`}"><path class="road-shadow" d="M0 ${12 + a * 24} C55 ${12 + a * 24},65 ${12 + b * 24},120 ${12 + b * 24}"/><path d="M0 ${12 + a * 24} C55 ${12 + a * 24},65 ${12 + b * 24},120 ${12 + b * 24}"/>${universal ? '<text x="60" y="40" text-anchor="middle">ANY ROAD</text>' : ""}</svg></div>`;
 }
-function card(c: TrailCard, artwork?: string) {
-  return `<div class="card-art" title="${escape(label(c))}${c.type === "river" ? "" : `: ${escape(description(c))}`}"><img src="${artwork ?? (c.type === "river" ? (c.deadly ? riverArt.raging : riverArt.moderate) : art[c.type])}" alt="" width="768" height="512" draggable="false">${route(c)}</div>`;
+function settlementStubs(
+  previous: TrailCard | undefined,
+  next: TrailCard | undefined,
+  first = false,
+) {
+  const universal = (card: TrailCard) =>
+    card.type === "town" || card.type === "fort";
+  const incoming = previous
+    ? universal(previous)
+      ? 1
+      : ends(previous)[1]
+    : first
+      ? 1
+      : undefined;
+  const outgoing = next ? (universal(next) ? 1 : ends(next)[0]) : undefined;
+  const paths = [
+    incoming !== undefined ? `M-5 ${12 + incoming * 24} H14` : "",
+    outgoing !== undefined ? `M125 ${12 + outgoing * 24} H106` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return paths
+    ? `<svg class="road settlement-stubs" viewBox="0 0 120 72" aria-hidden="true"><path class="road-shadow" d="${paths}"/><path d="${paths}"/></svg>`
+    : "";
+}
+function timelineCardAt(step: number) {
+  const s = game.state;
+  return (
+    s.trailReports?.[step]?.card ??
+    s.run.find(
+      (card, offset) =>
+        (card.journeyStep ?? s.count - s.run.length + offset + 1) === step,
+    )
+  );
+}
+function card(c: TrailCard, artwork?: string, overlay = "") {
+  return `<div class="card-art" title="${escape(label(c))}${c.type === "river" ? "" : `: ${escape(description(c))}`}"><img src="${artwork ?? (c.type === "river" ? (c.deadly ? riverArt.raging : riverArt.moderate) : art[c.type])}" alt="" width="768" height="512" draggable="false">${route(c)}${overlay}</div>`;
 }
 const button = (action: string, text: string, disabled = false) =>
   `<button data-action="${action}" ${disabled ? "disabled" : ""}>${text}</button>`;
@@ -494,13 +541,74 @@ function healingCountdown(hazard: Hazard) {
   const turns = hazard.rounds ?? hazard.skip;
   return `${turns} turn${turns === 1 ? "" : "s"} to heal`;
 }
+const inventoryTrailKinds: TrailCard["type"][] = [
+  "trail",
+  "calamity",
+  "river",
+  "town",
+  "fort",
+];
+const inventoryTrailNames: Record<TrailCard["type"], string> = {
+  trail: "Trail",
+  calamity: "Calamity",
+  river: "River",
+  town: "Town",
+  fort: "Fort",
+};
+function playerInventory(index: number) {
+  const player = game.state.players[index];
+  const stack = (
+    kind: string,
+    count: number,
+    preview: "trail" | "supplies",
+    face: string,
+    text: string,
+  ) =>
+    preview === "supplies"
+      ? `<button class="player-count inventory-stack inventory-supply" data-ui-key="inventory-${preview}-${kind}" data-player-preview="${preview}" data-player-index="${index}" data-inventory-kind="${kind}" aria-label="${escape(player.name)}: ${count} ${escape(text)}">${supplyEmblem(kind as Supply, count, true)}</button>`
+      : `<button class="player-count inventory-stack" data-ui-key="inventory-${preview}-${kind}" data-player-preview="${preview}" data-player-index="${index}" data-inventory-kind="${kind}" aria-label="${escape(player.name)}: ${count} ${escape(text)}"><span class="inventory-layers" aria-hidden="true">${Array.from({ length: Math.min(3, count) }, (_, layer) => `<span class="inventory-layer" style="--inventory-layer:${Math.min(3, count) - layer - 1}">${layer === Math.min(3, count) - 1 ? face : ""}</span>`).join("")}<b class="inventory-count">${count}</b></span></button>`;
+  const trail = inventoryTrailKinds
+    .map((kind) => {
+      const cards = player.hand.filter((card) => card.type === kind);
+      if (!cards.length) return "";
+      const image =
+        kind === "river"
+          ? cards[0].deadly
+            ? riverArt.raging
+            : riverArt.moderate
+          : art[kind];
+      return stack(
+        kind,
+        cards.length,
+        "trail",
+        `<img src="${image}" alt="">`,
+        `${inventoryTrailNames[kind].toLowerCase()} card${cards.length === 1 ? "" : "s"}`,
+      );
+    })
+    .join("");
+  const supplies = (Object.keys(names) as Supply[])
+    .map((kind) => {
+      const count = player.supplies.filter((supply) => supply === kind).length;
+      return count
+        ? stack(
+            kind,
+            count,
+            "supplies",
+            supplyEmblem(kind),
+            `${names[kind].toLowerCase()} suppl${count === 1 ? "y" : "ies"}`,
+          )
+        : "";
+    })
+    .join("");
+  return `<div class="player-inventory"><div class="inventory-group" role="group" aria-label="Trail cards">${trail || `<button class="player-count inventory-empty" data-player-preview="trail" data-player-index="${index}" aria-label="${escape(player.name)} has no trail cards">No cards</button>`}</div><div class="inventory-group inventory-supplies" role="group" aria-label="Supplies">${supplies || `<button class="player-count inventory-empty" data-player-preview="supplies" data-player-index="${index}" aria-label="${escape(player.name)} has no supplies">No supplies</button>`}</div></div>`;
+}
 function playerCard(index: number, turnPlayer = game.state.current) {
   const s = game.state;
   const p = s.players[index];
   const conditions = s.hazards.filter(
     (h) => h.owner === index && !wagonKinds.has(h.kind),
   );
-  return `<div data-ui-key="player-${index}" class="player ${index === turnPlayer ? "current" : ""} ${!p.alive ? "dead" : conditions.length ? "unwell" : ""}"><div class="player-heading">${portrait(index)}<div><strong>${escape(p.name)} ${!p.alive ? "†" : index === turnPlayer ? '<span class="player-turn-tag">Turn</span>' : ""}</strong><small>${p.alive ? `<button class="player-count" data-player-preview="trail" data-player-index="${index}" aria-label="View ${escape(p.name)}’s trail cards">${p.hand.length} trail</button> · <button class="player-count" data-player-preview="supplies" data-player-index="${index}" aria-label="View ${escape(p.name)}’s supplies">${p.supplies.length} supplies</button>` : escape(p.epitaph)}</small></div></div><div class="player-state" aria-label="${escape(p.name)}’s condition">${(p.alive ? conditions : []).map((h) => `<button class="condition-status" style="--condition-art:url('${calamityArt[h.kind]}')" data-ui-key="condition-${h.id}" data-player-preview="condition" data-player-index="${index}" data-hazard-id="${h.id}" aria-label="${escape(conditionTitle(h.kind, index))}${healingCountdown(h) ? `: ${healingCountdown(h)}` : ""}: condition and remedies"><span>${titles[h.kind]}</span>${healingCountdown(h) ? `<span class="healing-countdown">${healingCountdown(h)}</span>` : ""}</button>`).join("")}${p.alive && !conditions.length ? '<span class="condition-clear">In good health</span>' : ""}</div></div>`;
+  return `<div data-ui-key="player-${index}" class="player ${index === turnPlayer ? "current" : ""} ${!p.alive ? "dead" : conditions.length ? "unwell" : ""}"><div class="player-heading">${portrait(index)}<div><strong>${escape(p.name)} ${!p.alive ? "†" : index === turnPlayer ? '<span class="player-turn-tag">Turn</span>' : ""}</strong>${p.birthday ? `<small class="player-birthday">Born ${calendarDate(p.birthday)}</small>` : ""}</div></div>${p.alive ? playerInventory(index) : `<small class="player-epitaph">${escape(p.epitaph)}</small>`}<div class="player-state" aria-label="${escape(p.name)}’s condition">${(p.alive ? conditions : []).map((h) => `<button class="condition-status" style="--condition-art:url('${calamityArt[h.kind]}')" data-ui-key="condition-${h.id}" data-player-preview="condition" data-player-index="${index}" data-hazard-id="${h.id}" aria-label="${escape(conditionTitle(h.kind, index))}${healingCountdown(h) ? `: ${healingCountdown(h)}` : ""}: condition and remedies"><span>${titles[h.kind]}</span>${healingCountdown(h) ? `<span class="healing-countdown">${healingCountdown(h)}</span>` : ""}</button>`).join("")}${p.alive && !conditions.length ? '<span class="condition-clear">In good health</span>' : ""}</div></div>`;
 }
 function refreshPlayerSummaries(turnPlayer: number) {
   const summaries = app.querySelector(".players");
@@ -521,7 +629,25 @@ function reservePlayedTrailTile(played: TrailCard, animate: boolean) {
   piece.tabIndex = 0;
   piece.dataset.trailResults = "[]";
   const artwork = document.createElement("template");
-  artwork.innerHTML = card(played);
+  const step = played.journeyStep ?? game.state.count;
+  const previous = timelineCardAt(step - 1);
+  artwork.innerHTML = card(
+    played,
+    undefined,
+    ["town", "fort"].includes(played.type)
+      ? settlementStubs(previous, undefined, step === 1)
+      : "",
+  );
+  if (previous && ["town", "fort"].includes(previous.type)) {
+    const priorArt = strip.querySelector(
+      `[data-ui-key="trail-step-${step - 1}"] .card-art`,
+    );
+    priorArt?.querySelector(".settlement-stubs")?.remove();
+    priorArt?.insertAdjacentHTML(
+      "beforeend",
+      settlementStubs(timelineCardAt(step - 2), played, step === 2),
+    );
+  }
   piece.append(artwork.content);
   const caption = document.createElement("small");
   caption.textContent = label(played);
@@ -919,6 +1045,7 @@ function restoreTimelineOwners() {
       });
       if (event.action.type === "play" && next.count > previous.count) {
         const report = reports[next.count];
+        if (report) report.playedBy ??= previous.current;
         if (report?.calamity && !wagonKinds.has(report.calamity))
           report.owner ??= previous.current;
       }
@@ -1168,6 +1295,9 @@ function trailCaption(c: TrailCard) {
 function lostSupplyEmblem(kind: Supply) {
   return `<span class="lost-supply">${supplyEmblem(kind)}</span>`;
 }
+function timelineSupplyEmblem(kind: Supply, change: "gain" | "loss") {
+  return `<span class="timeline-supply-change ${change}">${supplyEmblem(kind)}<span class="supply-change-bubble" aria-hidden="true">${change === "gain" ? "+" : "−"}</span></span>`;
+}
 function trailOutcomes(reports: TrailReport[]) {
   const losses = reports.reduce(
     (n, report) =>
@@ -1214,7 +1344,7 @@ function trailOutcomes(reports: TrailReport[]) {
     .forEach(({ kind, supply, player }) =>
       items.push({
         owner: player,
-        icon: lostSupplyEmblem(supply),
+        icon: timelineSupplyEmblem(supply, "loss"),
         description: `${game.state.players[player].name} uses ${names[supply].toLowerCase()} to remedy ${titles[kind].toLowerCase()}.`,
       }),
     );
@@ -1228,7 +1358,7 @@ function trailOutcomes(reports: TrailReport[]) {
     .forEach(({ kind, owner }) =>
       items.push({
         owner,
-        icon: lostSupplyEmblem(kind),
+        icon: timelineSupplyEmblem(kind, "loss"),
         description:
           owner !== undefined
             ? `${game.state.players[owner].name} loses ${names[kind].toLowerCase()}`
@@ -1245,7 +1375,7 @@ function trailOutcomes(reports: TrailReport[]) {
       ([kind, count]) =>
         items.push({
           owner: report.gainOwner ?? report.owner,
-          icon: supplyEmblem(kind),
+          icon: timelineSupplyEmblem(kind, "gain"),
           description: `${report.gainOwner !== undefined ? game.state.players[report.gainOwner].name : "The party"} gains ${count} ${names[kind].toLowerCase()}`,
         }),
     ),
@@ -1299,15 +1429,25 @@ function playerPreviewContent(row: HTMLElement) {
       ? condition
         ? conditionTitle(condition.kind, index)
         : `${player.name}’s condition has been resolved`
-      : `${player.name}’s ${kind === "trail" ? "trail cards" : "supplies"}`;
-  const heading = `<strong class="tooltip-title">${portraitImage(player.portrait ?? index % 6)}<span>${escape(title)}</span></strong>${player.birthday ? `<p class="tooltip-birthday">Born ${calendarDate(player.birthday)}</p>` : ""}`;
-  if (kind === "trail")
-    return `${heading}${player.hand.length ? `<div class="player-hand-preview">${player.hand.map((c) => `<div>${card(c)}<span>${escape(label(c))}</span></div>`).join("")}</div>` : '<p class="preview-empty">No trail cards in hand.</p>'}`;
+      : `${player.name}’s ${row.dataset.inventoryKind ? (kind === "trail" ? `${inventoryTrailNames[row.dataset.inventoryKind as TrailCard["type"]].toLowerCase()} cards` : names[row.dataset.inventoryKind as Supply].toLowerCase()) : kind === "trail" ? "trail cards" : "supplies"}`;
+  const heading = `<strong class="tooltip-title">${portraitImage(player.portrait ?? index % 6)}<span>${escape(title)}</span></strong>`;
+  if (kind === "trail") {
+    const hand = player.hand.filter(
+      (card) =>
+        !row.dataset.inventoryKind || card.type === row.dataset.inventoryKind,
+    );
+    return `${heading}${hand.length ? `<div class="player-hand-preview">${hand.map((c) => `<div>${card(c)}<span>${escape(label(c))}</span></div>`).join("")}</div>` : '<p class="preview-empty">No trail cards in hand.</p>'}`;
+  }
   if (kind === "supplies") {
     const quantities = new Map<Supply, number>();
-    player.supplies.forEach((supply) =>
-      quantities.set(supply, (quantities.get(supply) ?? 0) + 1),
-    );
+    player.supplies
+      .filter(
+        (supply) =>
+          !row.dataset.inventoryKind || supply === row.dataset.inventoryKind,
+      )
+      .forEach((supply) =>
+        quantities.set(supply, (quantities.get(supply) ?? 0) + 1),
+      );
     return `${heading}${quantities.size ? `<div class="player-supply-preview">${Array.from(quantities, ([supply, count]) => supplyEmblem(supply, count, true)).join("")}</div>` : '<p class="preview-empty">No supplies left.</p>'}`;
   }
   const hazard = game.state.hazards.find(
@@ -1345,9 +1485,20 @@ function showOutcomeTooltip(row: HTMLElement) {
     : Array.from(
         outcomes?.querySelectorAll<HTMLElement>(".trail-outcome") ?? [],
       );
+  const actor =
+    row.dataset.trailPlayer !== undefined
+      ? game.state.players[Number(row.dataset.trailPlayer)]
+      : undefined;
+  const turnContext =
+    isTile && !isStart
+      ? `<div class="timeline-turn-context">${actor ? `${portraitImage(actor.portrait ?? Number(row.dataset.trailPlayer) % 6)}<span>${escape(actor.name)}’s turn</span>` : "<span>Turn player not recorded</span>"}</div>`
+      : "";
   outcomeTooltip.innerHTML =
+    (row.dataset.headerTooltip
+      ? `<span>${escape(row.dataset.headerTooltip)}</span>`
+      : undefined) ??
     playerPreviewContent(row) ??
-    `${isIcon ? "" : `<strong class="tooltip-title">${isTile ? (row.querySelector(".trail-afflicted")?.innerHTML ?? "") : ""}<span>${escape(title)}</span></strong>`}${results.length ? `<div class="tooltip-results">${results.map((text) => `<p>${escape(text)}</p>`).join("")}</div>` : ""}<ul>${descriptions
+    `${isIcon ? "" : `${turnContext}<strong class="tooltip-title"><span>${escape(title)}</span></strong>`}${results.length ? `<div class="tooltip-results">${results.map((text) => `<p>${escape(text)}</p>`).join("")}</div>` : ""}<ul>${descriptions
       .map((text, index) => {
         const icon = icons[index];
         const owner = icon?.dataset.outcomeOwner;
@@ -1378,7 +1529,7 @@ function showOutcomeTooltip(row: HTMLElement) {
 app.addEventListener("mouseover", (event) => {
   if (tooltipPinned) return;
   const row = (event.target as Element).closest<HTMLElement>(
-    ".trail-outcome, .trail-afflicted, .trail-piece, .trail-start, [data-player-preview], [data-wagon-preview]",
+    ".trail-outcome, .trail-afflicted, .trail-piece, .trail-start, [data-player-preview], [data-wagon-preview], [data-header-tooltip]",
   );
   if (row && row !== tooltipOwner) showOutcomeTooltip(row);
 });
@@ -1397,16 +1548,20 @@ outcomeTooltip.addEventListener("mouseleave", () => {
 });
 app.addEventListener("focusin", (event) => {
   const row = (event.target as Element).closest<HTMLElement>(
-    ".trail-outcome, .trail-afflicted, .trail-piece, .trail-start, [data-player-preview], [data-wagon-preview]",
+    ".trail-outcome, .trail-afflicted, .trail-piece, .trail-start, [data-player-preview], [data-wagon-preview], [data-header-tooltip]",
   );
   if (row) showOutcomeTooltip(row);
   else hideOutcomeTooltip();
 });
 app.addEventListener("click", (event) => {
   const row = (event.target as Element).closest<HTMLElement>(
-    ".trail-outcome, .trail-afflicted, .trail-piece, .trail-start, [data-player-preview], [data-wagon-preview]",
+    ".trail-outcome, .trail-afflicted, .trail-piece, .trail-start, [data-player-preview], [data-wagon-preview], [data-header-tooltip]",
   );
   if (!row) {
+    hideOutcomeTooltip();
+    return;
+  }
+  if (row.hasAttribute("data-header-tooltip")) {
     hideOutcomeTooltip();
     return;
   }
@@ -1424,7 +1579,7 @@ document.addEventListener("pointerdown", (event) => {
   const target = event.target as Element;
   if (
     !target.closest(
-      ".trail-outcome, .trail-afflicted, .trail-piece, .trail-start, [data-player-preview], [data-wagon-preview]",
+      ".trail-outcome, .trail-afflicted, .trail-piece, .trail-start, [data-player-preview], [data-wagon-preview], [data-header-tooltip]",
     ) &&
     !outcomeTooltip.contains(target)
   )
@@ -1478,6 +1633,7 @@ function recordTrailResult(
     deaths: [],
   });
   report.card ??= structuredClone(played ?? previousTop!);
+  if (played) report.playedBy = before.current;
   if (played?.type === "river") {
     report.title = "River crossing";
     report.attempts = 0;
@@ -1630,10 +1786,162 @@ function trail() {
         (c.journeyStep ?? s.count - s.run.length + offset + 1) === step,
     );
     const c = report?.card ?? fallback;
-    return `<div class="trail-piece ${step === activeStep && s.status === "travel" ? "active-connection" : ""}" data-ui-key="trail-step-${step}" tabindex="0" data-trail-results="${escape(JSON.stringify([timelineDescription(report, c)]))}" aria-label="Trail card ${step}${step === activeStep ? ", active connection" : ""}">${c ? card(c, reportArtwork(report, c)) : `<div class="earlier-trail"><img src="${art.trail}" alt="Earlier stretch of trail"></div>`}${trailPlayerBadge(report)}<small>${escape(trailReportTitle(report, c))}</small>${trailOutcomes(report ? [report] : [])}</div>`;
+    return `<div class="trail-piece ${step === activeStep && s.status === "travel" ? "active-connection" : ""}" data-ui-key="trail-step-${step}" tabindex="0" data-trail-results="${escape(JSON.stringify([timelineDescription(report, c)]))}" ${report?.playedBy !== undefined ? `data-trail-player="${report.playedBy}"` : ""} aria-label="Trail card ${step}${step === activeStep ? ", active connection" : ""}">${c ? card(c, reportArtwork(report, c), ["town", "fort"].includes(c.type) ? settlementStubs(timelineCardAt(step - 1), timelineCardAt(step + 1), step === 1) : "") : `<div class="earlier-trail"><img src="${art.trail}" alt="Earlier stretch of trail"></div>`}${trailPlayerBadge(report)}<small>${escape(trailReportTitle(report, c))}</small>${trailOutcomes(report ? [report] : [])}</div>`;
   }).join("");
   return `<section class="trail-area" aria-label="Journey trail"><div class="section-line"><h2>The trail so far</h2><span class="journey-calendar">${calendarDate(journeyDate(s.turn - 1, s.startDate))} · ${s.turn - 1} day${s.turn === 2 ? "" : "s"} on the trail</span><button class="trail-return" data-action="trail-end" aria-label="Back to end of trail" title="Back to end of trail" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12h12m-5-5 5 5-5 5M20 5v14"/></svg></button></div><div class="map-track" data-ui-static role="progressbar" aria-label="Journey progress" aria-valuemin="0" aria-valuemax="50" aria-valuenow="${s.count}"><span style="width:${s.count * 2}%"><img class="progress-wagon" src="${art.progressWagon}" alt="" aria-hidden="true"></span></div><div class="trail-body"><div class="trail-route"><div class="trail-strip"><div class="trail-start" data-ui-key="trail-start" tabindex="0" data-trail-results="${escape(JSON.stringify(["Your journey begins in Independence, Missouri. The wagon is packed, the kettle is rattling, and Oregon waits at the far end of fifty trail cards."]))}" aria-label="Journey starts in Independence, Missouri"><div class="start-art"><img src="${art.independence}" alt="A wagon departing the frontier town of Independence"><span class="start-badge">START</span></div><strong>Independence</strong><small>Missouri</small></div>${entries}<div class="trail-marker ${s.status === "won" ? "arrived" : ""}" data-ui-key="trail-finish" style="--finish-progress:${s.count / 50};--finish-dots:${Math.ceil((50 - s.count) / 5)}" aria-label="${s.status === "won" ? "Arrived in Oregon" : "Destination: Oregon"}"><div class="finish-destination"><div class="finish-art"><img src="${art.landscape}" alt="Quiet hills and a wagon at the journey’s destination"><span class="finish-badge"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 14V2m0 0h9l-2 3 2 3H3"/></svg>${s.status === "won" ? "ARRIVED" : "FINISH"}</span></div><strong>Oregon</strong><small>Willamette Valley</small></div></div></div></div>${wagonState()}</div></section>`;
 }
+const outcomeNames: Record<Journey["status"] | "abandoned", string> = {
+  won: "Reached Oregon",
+  lost: "Journey lost",
+  abandoned: "Set aside",
+  travel: "Underway",
+};
+function headerIcon(
+  action: string,
+  text: string,
+  paths: string,
+  selected = false,
+) {
+  return `<button class="header-icon" data-action="${action}" data-header-tooltip="${escape(text)}" aria-label="${escape(text)}" ${selected ? 'aria-pressed="true"' : ""}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg></button>`;
+}
+function navigationIcons() {
+  return `${headerIcon("journeys", "Choose a journey", '<path d="M3 7V4h6l2 3h10v13H3Z"/><path d="M7 12h10M7 16h7"/>', showJourneys)}${headerIcon("new", "New journey", '<path d="M12 5v14M5 12h14"/>')}${headerIcon("clear-storage", "Clear local storage", '<path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/>')}`;
+}
+function journeysScreen() {
+  const records = (history?.archive.games ?? [])
+    .flatMap((record, index) => {
+      try {
+        const state = replayGame(record);
+        return [
+          {
+            id: record.id,
+            number: index + 1,
+            startedAt: record.startedAt,
+            outcome: (record.outcome === "abandoned"
+              ? "abandoned"
+              : state.status) as Journey["status"] | "abandoned",
+            distance: Math.min(50, Math.max(0, state.count)),
+            days: Math.max(0, state.turn - 1),
+            survivors: state.players.filter((player) => player.alive).length,
+            players: state.players,
+          },
+        ];
+      } catch {
+        return [];
+      }
+    })
+    .reverse();
+  return `<header><div><p class="eyebrow">Pick up a thread of trail</p><h1>Your <i>journeys</i></h1></div><div class="header-actions">${button("journeys-back", setup ? "← Back to wagon" : "← Back to journey")}${navigationIcons()}</div></header><main class="journey-browser"><div class="journey-browser-heading"><h2 id="journey-browser-heading" tabindex="-1">${records.length} saved journey${records.length === 1 ? "" : "s"}</h2><p>Open a journey to continue its current turn or revisit its final result.</p></div>${journeyOpenError ? `<p class="journey-open-error" role="alert">${escape(journeyOpenError)}</p>` : ""}${
+    records.length
+      ? `<div class="journey-list">${records
+          .map((record) => {
+            const raw = history?.archive.games.find(
+              (game) => game.id === record.id,
+            );
+            const current = history?.archive.active === record.id;
+            const stamp = new Date(record.startedAt);
+            const date = Number.isFinite(stamp.getTime())
+              ? stamp.toLocaleDateString("en-US", {
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                })
+              : "Saved journey";
+            let turnName = "";
+            if (raw && record.outcome !== "won" && record.outcome !== "lost") {
+              const state = replayGame(raw);
+              turnName = state.players[state.current]?.name ?? "";
+            }
+            return `<article class="journey-list-row" data-ui-key="journey-choice-${escape(record.id)}"><div class="journey-list-copy"><div class="journey-list-title"><h3>Journey ${record.number}</h3><span class="stats-outcome-tag stats-tag-${record.outcome}">${outcomeNames[record.outcome]}</span>${current ? '<span class="journey-current-tag">Current</span>' : ""}</div><p>${date} · ${record.distance} / 50 cards · ${record.days} day${record.days === 1 ? "" : "s"} · ${record.survivors} / ${record.players.length} alive</p><div class="journey-list-party">${record.players.map((player, index) => `<span>${player.alive ? portraitImage(player.portrait ?? index % 6) : `<img class="stats-grave" src="${art.tombstoneIcon}" alt="">`}<span>${escape(player.name)}</span></span>`).join("")}</div></div><div class="journey-list-open">${turnName ? `<small>${escape(turnName)}’s turn</small>` : ""}<button data-open-journey="${escape(record.id)}" aria-label="Open Journey ${record.number}">${record.outcome === "won" || record.outcome === "lost" ? "View result" : "Open journey"} →</button></div></article>`;
+          })
+          .join("")}</div>`
+      : `<section class="stats-empty"><img src="${art.progressWagon}" alt=""><h3>No journeys yet.</h3><p>Pack a wagon to begin your first story.</p>${button("new", "New journey →")}</section>`
+  }</main>`;
+}
+app.addEventListener("click", async (event) => {
+  const target = (event.target as Element).closest<HTMLButtonElement>(
+    '[data-action="journeys-back"], [data-action="journeys"], [data-open-journey], [data-action="new"]',
+  );
+  if (!target || busy || target.disabled) return;
+  if (target.dataset.action === "new" && !showJourneys) return;
+  event.stopImmediatePropagation();
+  const opening = target.dataset.openJourney;
+  setBusy(true);
+  try {
+    if (opening) {
+      try {
+        const record = history?.archive.games.find(
+          (record) => record.id === opening,
+        );
+        if (!record) throw new Error("This journey is unavailable.");
+        const state = readSave(JSON.stringify(replayGame(record)));
+        if (!state)
+          throw new Error("This journey’s saved state cannot be opened.");
+        history!.select(opening);
+        game = new TrailGame(
+          Math.random,
+          state,
+          (n) => pendingRolls.push(n),
+          (kind) => {
+            revealedCalamity = kind;
+          },
+        );
+        pendingRolls.length = 0;
+        revealedCalamity = undefined;
+        setup = false;
+        confirming = false;
+        shopOpen = false;
+        showJourneys = false;
+        willDraftOwner = -1;
+        willDraft.clear();
+        selectedWillSupply = null;
+        renderedProgress = -1;
+        restoreTimelineOwners();
+        persist({ type: "open-journey" });
+      } catch (error) {
+        journeyOpenError =
+          error instanceof Error
+            ? error.message
+            : "This journey cannot be opened.";
+        render();
+        return;
+      }
+    } else if (target.dataset.action === "journeys") {
+      if (!showJourneys) journeyScroll = window.scrollY;
+      journeyOpenError = "";
+      showJourneys = true;
+    } else {
+      showJourneys = false;
+      if (target.dataset.action === "new" && !setup) confirming = true;
+    }
+    render();
+    window.scrollTo({
+      top: showJourneys || opening ? 0 : journeyScroll,
+      behavior: "instant",
+    });
+    if (!reducedMotion.matches)
+      await playTimeline((tl) =>
+        tl.fromTo(
+          app.querySelector(showJourneys ? ".journey-browser" : ".decision"),
+          { opacity: 0, y: 8 },
+          { opacity: 1, y: 0, duration: 0.25, clearProps: "opacity,transform" },
+        ),
+      );
+    if (opening) {
+      if (game.state.status !== "travel") await revealJourneyEnd();
+      else if (game.state.phase === "legacy") {
+        await revealWills();
+        render();
+      }
+    }
+    const focus = showJourneys
+      ? "#journey-browser-heading"
+      : '[data-action="journeys"]';
+    app.querySelector<HTMLElement>(focus)?.focus({ preventScroll: true });
+  } finally {
+    setBusy(false);
+  }
+});
 function trading() {
   const s = game.state;
   return `<section class="shop ${shopOpen ? "is-open" : ""}"><button data-action="shop" class="shop-toggle" aria-expanded="${shopOpen}" aria-controls="supply-shop-content"><img src="${art.shop}" alt=""><span><span class="eyebrow">Give 2 → Get 1</span><strong>Supply exchange</strong><small>Any two supplies for one you need · no turn used</small></span><span class="shop-chevron" aria-hidden="true">⌄</span></button><div id="supply-shop-content" class="shop-content" ${!shopOpen ? "hidden" : ""}><div class="exchange-columns"><section class="exchange-give"><div class="exchange-heading"><h3>Give 2</h3><span class="trade-give-count" role="status">0 / 2 selected</span></div><p>Pick any two supplies. One traveller can pay both, or two can share.</p><div class="exchange-bags">${game.living
@@ -1717,9 +2025,14 @@ app.addEventListener("click", (event) => {
 });
 function render() {
   hideOutcomeTooltip();
+  if (showJourneys) {
+    const page = document.createElement("template");
+    page.innerHTML = journeysScreen();
+    return reconcile(app, page.content);
+  }
   const s = game.state;
   const scene = journeyArtwork();
-  const markup = `<header><div><p class="eyebrow">A cooperative westward wander · 2–6 players</p><h1>Oregon Trail <i>Cards</i></h1></div><div class="header-actions">${setup ? (s.started ? button("resume", "Back to journey") : "") : button("new", "New journey")}${button("clear-storage", "Clear local storage")}</div></header>${confirming ? `<aside class="restart-confirm"><span>Leave this journey behind?</span><div class="restart-actions">${button("cancel", "Stay here")}${button("confirm-new", "Start afresh")}</div></aside>` : ""}${
+  const markup = `<header><div><p class="eyebrow">A cooperative westward wander · 2–6 players</p><h1>Oregon Trail <i>Cards</i></h1></div><div class="header-actions">${navigationIcons()}${setup ? (s.started ? button("resume", "Back to journey") : "") : ""}</div></header>${confirming ? `<aside class="restart-confirm"><span>Leave this journey behind?</span><div class="restart-actions">${button("cancel", "Stay here")}${button("confirm-new", "Start afresh")}</div></aside>` : ""}${
     setup
       ? setupScreen()
       : `<section class="journey"><img class="banner ${scene.src === art.landscape ? "" : "is-event"} ${[art.river, riverArt.moderate, riverArt.raging].includes(scene.src) ? "is-river" : ""}" src="${scene.src}" alt="${escape(scene.alt)}"></section><section class="players" aria-label="Travellers">${s.players.map((_, i) => playerCard(i)).join("")}</section>${trail()}${decision()}${
