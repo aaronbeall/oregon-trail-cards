@@ -4374,3 +4374,20 @@ button.wagon-condition:focus-visible {
 .turn-option.is-urgent .remedy-choice > button:focus-visible {
   outline-color: var(--remedy-color);
 }
+
+.supply-stack > .supply-change-bubble {
+  width: auto;
+  min-width: 19px;
+  height: 15px;
+  padding: 0 3px;
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  font:
+    bold 10px/1 "Courier New",
+    monospace;
+}
+.supply-stack > .supply-change-bubble::before,
+.timeline-supply-change.gain .supply-stack > .supply-change-bubble::after {
+  content: none;
+}

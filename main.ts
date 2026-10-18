@@ -1445,7 +1445,7 @@ function lostSupplyEmblem(kind: Supply) {
   return `<span class="lost-supply">${supplyEmblem(kind)}</span>`;
 }
 function timelineSupplyEmblem(kind: Supply, change: "gain" | "loss") {
-  return `<span class="timeline-supply-change ${change}">${supplyEmblem(kind)}<span class="supply-change-bubble" aria-hidden="true">${change === "gain" ? "+" : "−"}</span></span>`;
+  return `<span class="timeline-supply-change ${change}">${supplyEmblem(kind, 1, false, change)}</span>`;
 }
 function trailOutcomes(reports: TrailReport[]) {
   const losses = reports.reduce(

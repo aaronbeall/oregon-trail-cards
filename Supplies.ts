@@ -36,10 +36,15 @@ export function supplyColor(kind: Supply) {
 }
 
 /** Small stacks suggest multiples; the badge always gives the exact quantity. */
-export function supplyEmblem(kind: Supply, quantity = 1, count = false) {
+export function supplyEmblem(
+  kind: Supply,
+  quantity = 1,
+  count = false,
+  change?: "gain" | "loss",
+) {
   const { color, icon } = emblems[kind];
   const layers = Math.min(3, Math.max(1, quantity));
-  return `<span class="supply-token ${quantity === 0 ? "supply-empty" : ""}" data-ui-key="supply-${kind}" data-supply-kind="${kind}" style="--supply-color:${color}"><span class="supply-stack" style="--supply-layers:${layers}" aria-hidden="true">${Array.from({ length: layers }, (_, i) => `<span class="supply-seal" style="--layer:${layers - i - 1}">${i === layers - 1 ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${icon}</svg>` : ""}</span>`).join("")}${count || quantity !== 1 ? `<b class="supply-count">${quantity}</b>` : ""}</span><span class="supply-label">${names[kind]}${count || quantity !== 1 ? `<span class="sr-only">: ${quantity}</span>` : ""}</span></span>`;
+  return `<span class="supply-token ${quantity === 0 ? "supply-empty" : ""}" data-ui-key="supply-${kind}" data-supply-kind="${kind}" style="--supply-color:${color}"><span class="supply-stack" style="--supply-layers:${layers}" aria-hidden="true">${Array.from({ length: layers }, (_, i) => `<span class="supply-seal" style="--layer:${layers - i - 1}">${i === layers - 1 ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${icon}</svg>` : ""}</span>`).join("")}${!change && (count || quantity !== 1) ? `<b class="supply-count">${quantity}</b>` : ""}${change ? `<span class="supply-change-bubble" aria-hidden="true">${change === "gain" ? "+" : "−"}${quantity}</span>` : ""}</span><span class="supply-label">${names[kind]}${count || quantity !== 1 ? `<span class="sr-only">: ${quantity}</span>` : ""}</span></span>`;
 }
 
 export function hiddenSupply(label: string) {
