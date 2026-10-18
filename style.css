@@ -3611,6 +3611,298 @@ button.wagon-condition:focus-visible {
     serif;
 }
 
+.stats-screen {
+  padding: 24px 0;
+}
+.stats-intro {
+  margin-bottom: 24px;
+}
+.stats-intro h2 {
+  font:
+    27px Georgia,
+    serif;
+  outline: none;
+}
+.stats-intro p,
+.stats-chart-note {
+  margin: 8px 0 0;
+  color: var(--quiet);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.stats-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  gap: 16px;
+}
+.stats-panel {
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #f1ead74d;
+}
+.stats-panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.stats-panel-heading h3 {
+  margin: 0;
+  font:
+    19px Georgia,
+    serif;
+}
+.stats-panel-heading > span {
+  color: var(--quiet);
+  font:
+    11px "Courier New",
+    monospace;
+}
+.stats-outcome-bar {
+  display: flex;
+  height: 22px;
+  gap: 3px;
+  margin: 24px 0 20px;
+  overflow: hidden;
+  border-radius: 3px;
+}
+.stats-tone-won {
+  background: #667d59;
+}
+.stats-tone-lost {
+  background: #a86d53;
+}
+.stats-tone-abandoned {
+  background: #a69b83;
+}
+.stats-tone-travel {
+  background: #6f9090;
+}
+.stats-outcome-legend {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 24px;
+}
+.stats-outcome-legend > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.stats-outcome-legend strong {
+  margin-left: auto;
+}
+.stats-dot {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 9px;
+  border-radius: 50%;
+}
+.stats-rate {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+.stats-rate svg {
+  width: 140px;
+  height: 140px;
+  flex: 0 0 140px;
+}
+.stats-ring-base {
+  stroke: #bcb49c60;
+}
+.stats-ring-loss {
+  stroke: #a86d53;
+}
+.stats-ring-win {
+  stroke: #667d59;
+}
+.stats-rate text {
+  fill: var(--ink);
+  font:
+    27px Georgia,
+    serif;
+}
+.stats-rate .stats-ring-label {
+  fill: var(--quiet);
+  font:
+    9px "Courier New",
+    monospace;
+}
+.stats-rate p {
+  font:
+    16px Georgia,
+    serif;
+}
+.stats-rate small {
+  display: block;
+  margin-top: 9px;
+  color: var(--quiet);
+  font:
+    10px "Courier New",
+    monospace;
+  line-height: 1.6;
+}
+.stats-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  padding: 28px 0;
+}
+.stats-metrics > div {
+  padding-left: 12px;
+}
+.stats-metrics strong {
+  display: block;
+  font:
+    32px Georgia,
+    serif;
+  color: #52654b;
+}
+.stats-metrics span {
+  display: block;
+  margin-top: 8px;
+  font-size: 13px;
+}
+.stats-metrics small {
+  display: block;
+  margin-top: 6px;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--quiet);
+}
+.stats-charts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.stats-distance-chart {
+  display: flex;
+  gap: 12px;
+  padding-top: 24px;
+  align-items: flex-end;
+}
+.stats-distance-chart > div {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+}
+.stats-distance-chart strong {
+  font:
+    12px "Courier New",
+    monospace;
+}
+.stats-bin-track {
+  display: flex;
+  align-items: flex-end;
+  height: 130px;
+  margin: 8px 0;
+  background: #bcb49c15;
+  border-bottom: 1px solid var(--line);
+}
+.stats-bin-track span {
+  display: block;
+  width: 100%;
+  border-radius: 3px 3px 0 0;
+}
+.stats-distance-chart small {
+  font:
+    10px "Courier New",
+    monospace;
+}
+.stats-death-chart {
+  display: grid;
+  gap: 13px;
+  margin-top: 22px;
+}
+.stats-death-row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+}
+.stats-death-row img {
+  width: 34px;
+  height: 34px;
+  object-fit: cover;
+  border-radius: 3px;
+}
+.stats-death-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+}
+.stats-death-track {
+  height: 5px;
+  background: #bcb49c30;
+  margin-top: 7px;
+}
+.stats-death-track span {
+  display: block;
+  height: 100%;
+  background: #a86d53;
+}
+.stats-no-deaths {
+  text-align: center;
+  padding: 30px 0 10px;
+  font-size: 12px;
+  color: var(--quiet);
+}
+.stats-no-deaths img {
+  width: 72px;
+  opacity: 0.65;
+}
+.stats-history {
+  margin-top: 28px;
+}
+.stats-filters {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 16px 0;
+}
+.stats-filters button {
+  padding: 7px 10px;
+  border-radius: 3px;
+  font-size: 11px;
+  background: transparent;
+}
+.stats-filters button[aria-pressed="true"] {
+  border-color: var(--sage);
+  background: #69745b22;
+}
+.stats-filters span {
+  margin-left: 6px;
+  color: var(--quiet);
+}
+.stats-records {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.stats-record {
+  padding: 15px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #f1ead74d;
+}
+.stats-record-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.stats-record h4 {
+  margin: 0;
+  font:
+    17px Georgia,
+    serif;
+}
 .stats-outcome-tag {
   padding: 3px 5px;
   border-radius: 3px;
@@ -3631,6 +3923,47 @@ button.wagon-condition:focus-visible {
 .stats-tag-travel {
   color: #3c6565;
   background: #6f909026;
+}
+.stats-record-date {
+  color: var(--quiet);
+  font-size: 10px;
+  margin-top: 7px;
+}
+.stats-record-progress {
+  height: 5px;
+  background: #bcb49c30;
+  margin-top: 16px;
+}
+.stats-record-progress span {
+  display: block;
+  height: 100%;
+}
+.stats-record-totals {
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  margin-top: 8px;
+  font:
+    9px "Courier New",
+    monospace;
+  color: var(--quiet);
+}
+.stats-record-party {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 12px;
+}
+.stats-record-party .portrait,
+.stats-grave {
+  display: block;
+  width: 25px;
+  height: 25px;
+  object-fit: contain;
+}
+.stats-no-records {
+  color: var(--quiet);
+  font-size: 13px;
 }
 .stats-empty {
   padding: 48px 20px;
@@ -3655,11 +3988,40 @@ button.wagon-condition:focus-visible {
 .stats-empty button {
   margin-top: 12px;
 }
-.stats-grave {
-  display: block;
-  width: 25px;
-  height: 25px;
-  object-fit: contain;
+@media (max-width: 800px) {
+  .stats-overview,
+  .stats-charts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .stats-records {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 500px) {
+  .stats-records {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .stats-panel {
+    padding: 16px;
+  }
+  .stats-metrics {
+    gap: 10px;
+  }
+  .stats-metrics > div {
+    padding-left: 0;
+  }
+  .stats-metrics strong {
+    font-size: 28px;
+  }
+  .stats-metrics span {
+    font-size: 11px;
+  }
+  .stats-outcome-legend {
+    gap: 14px 12px;
+  }
+  .stats-distance-chart {
+    gap: 8px;
+  }
 }
 
 .header-actions .header-icon {
@@ -3704,7 +4066,7 @@ button.wagon-condition:focus-visible {
 }
 .journey-list-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: 136px minmax(0, 1fr) auto;
   align-items: center;
   gap: 20px;
   border: 1px solid var(--line);
@@ -4373,6 +4735,1124 @@ button.wagon-condition:focus-visible {
 }
 .turn-option.is-urgent .remedy-choice > button:focus-visible {
   outline-color: var(--remedy-color);
+}
+
+.journey-list-art {
+  display: block;
+  width: 100%;
+  height: 108px;
+  object-fit: cover;
+  border-radius: 3px;
+}
+.journey-list-copy {
+  min-width: 0;
+}
+@media (min-width: 501px) and (max-width: 800px) {
+  .journey-list-row {
+    grid-template-columns: 112px minmax(0, 1fr);
+    gap: 14px;
+  }
+  .journey-list-open {
+    grid-column: 2;
+    align-items: flex-start;
+  }
+}
+@media (max-width: 500px) {
+  .journey-list-art {
+    height: 128px;
+  }
+}
+
+.journey-list-metrics {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin: 10px 0;
+}
+.journey-progress-ring {
+  --ring-color: #667d59;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--quiet);
+  font-size: 10px;
+}
+.journey-progress-ring.is-survival {
+  --ring-color: #517f80;
+}
+.journey-progress-ring svg {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+}
+.journey-progress-ring circle {
+  fill: none;
+  stroke-width: 3;
+}
+.journey-ring-track {
+  stroke: #bcb49c55;
+}
+.journey-ring-fill {
+  stroke: var(--ring-color);
+}
+.journey-progress-ring text {
+  fill: var(--ink);
+  font:
+    10px "Courier New",
+    monospace;
+}
+.journey-list-date {
+  color: var(--quiet);
+  font-size: 10px;
+  line-height: 1.6;
+}
+.journey-list-date small {
+  display: block;
+  font-size: 10px;
+}
+@media (max-width: 500px) {
+  .journey-list-metrics {
+    gap: 12px;
+  }
+}
+
+/* The ledger opens into a keepsake atlas. */
+.journey-flow {
+  margin-bottom: 24px;
+  overflow: hidden;
+}
+.flow-scroll {
+  overflow-x: auto;
+  margin-top: 14px;
+}
+.flow-scroll svg {
+  display: block;
+  width: 100%;
+  min-width: 690px;
+}
+.flow-stage path {
+  fill: none;
+  stroke: #8b84632a;
+  stroke-dasharray: 2 5;
+}
+.flow-stage text,
+.flow-start-label {
+  fill: var(--quiet);
+  font:
+    10px "Courier New",
+    monospace;
+  letter-spacing: 0.05em;
+}
+.flow-ribbon {
+  opacity: 0.65;
+  stroke: var(--paper);
+  stroke-width: 0.6;
+  transition: opacity 0.25s;
+}
+.flow-ribbon:hover {
+  opacity: 1;
+}
+.flow-won {
+  --flow-color: #718b60;
+}
+.flow-travel {
+  --flow-color: #628e91;
+}
+.flow-abandoned {
+  --flow-color: #b2a482;
+}
+.flow-lost {
+  --flow-color: #ad735b;
+}
+.flow-ribbon,
+.flow-port rect {
+  fill: var(--flow-color);
+}
+.flow-port text {
+  fill: var(--ink);
+  font:
+    13px Georgia,
+    serif;
+}
+.flow-port .flow-count {
+  fill: var(--quiet);
+  font:
+    10px "Courier New",
+    monospace;
+}
+.flow-legend {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.flow-legend button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  background: transparent;
+  padding: 7px 9px;
+}
+.flow-legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--flow-color);
+}
+.stats-map-button {
+  margin-top: 14px;
+  width: 100%;
+  background: #69745b12;
+  border-radius: 3px;
+  font-size: 11px;
+}
+.journey-detail-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  align-items: center;
+  margin: 22px 0;
+}
+.journey-detail-summary > button {
+  margin-left: auto;
+}
+.map-partial {
+  font-size: 12px;
+  color: var(--quiet);
+}
+.journey-map {
+  min-width: 0;
+  margin-top: 24px;
+  text-align: left;
+}
+.map-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.map-heading h3 {
+  margin: 0;
+  font:
+    24px Georgia,
+    serif;
+}
+.map-heading > span {
+  color: var(--quiet);
+  font:
+    10px "Courier New",
+    monospace;
+}
+.journey-map-scroll {
+  overflow: auto;
+  max-height: 680px;
+  border: 1px solid #a89a764d;
+  border-radius: 6px;
+  background: #dfd8b83b;
+}
+.journey-map-canvas {
+  width: 100%;
+  min-width: 640px;
+  position: relative;
+}
+.journey-map-terrain {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.map-route-shadow {
+  fill: none;
+  stroke: #f5eedc;
+  stroke-width: 13px;
+  stroke-linecap: round;
+}
+.map-route {
+  fill: none;
+  stroke: #8a7552;
+  stroke-width: 3px;
+  stroke-linecap: round;
+}
+.map-marker {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  border: 0;
+  padding: 0;
+  background: none;
+  box-shadow: none;
+  width: 96px;
+  display: grid;
+  justify-items: center;
+  gap: 7px;
+  z-index: 1;
+}
+.map-marker-image {
+  position: relative;
+  display: block;
+  width: 56px;
+  height: 56px;
+  border: 3px solid #f5eedc;
+  border-radius: 50%;
+  box-shadow:
+    0 2px 0 #7b715344,
+    0 0 0 1px #8a755277;
+  background: var(--paper);
+  transition:
+    transform 0.25s,
+    box-shadow 0.25s;
+}
+.map-marker-image > img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+}
+.map-marker-image > .map-death-badge {
+  position: absolute;
+  right: -10px;
+  bottom: -4px;
+  width: 22px;
+  height: 25px;
+  border-radius: 0;
+  object-fit: contain;
+  filter: drop-shadow(0 1px 0 var(--paper));
+}
+.map-marker-label {
+  color: var(--ink);
+  font:
+    11px Georgia,
+    serif;
+  text-shadow:
+    0 1px 2px var(--paper),
+    0 0 5px var(--paper);
+}
+.map-marker.is-quiet {
+  width: 32px;
+  gap: 4px;
+}
+.map-marker.is-quiet .map-marker-image {
+  width: 13px;
+  height: 13px;
+  border-width: 2px;
+  background: #8a7552;
+}
+.map-marker.is-quiet .map-marker-image > img {
+  visibility: hidden;
+}
+.map-marker.is-quiet .map-marker-label {
+  font:
+    9px "Courier New",
+    monospace;
+}
+.map-marker.is-endpoint .map-marker-image {
+  width: 66px;
+  height: 66px;
+}
+.map-marker:hover .map-marker-image,
+.map-marker:focus-visible .map-marker-image {
+  transform: scale(1.12);
+  box-shadow: 0 0 0 4px #718b6033;
+}
+.map-marker:focus-visible {
+  outline: 2px solid var(--sage);
+  outline-offset: 6px;
+  border-radius: 4px;
+}
+.map-caption {
+  color: var(--quiet);
+  font-size: 11px;
+  margin: 10px 0;
+}
+.map-detail-art {
+  display: block;
+  width: 100%;
+  height: 120px;
+  object-fit: cover;
+  border-radius: 3px;
+}
+.map-detail-owner {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  font-size: 11px;
+  color: var(--quiet);
+}
+.map-detail-owner .portrait {
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
+}
+.map-death {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.map-death img {
+  width: 22px;
+  height: 25px;
+  object-fit: contain;
+}
+.map-supplies {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.map-supply-change {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  font-size: 12px;
+}
+.map-supply-change small {
+  max-width: 100px;
+}
+.journey-finale .journey-map-scroll {
+  max-height: 370px;
+}
+.journey-finale .map-heading h3 {
+  font-size: 21px;
+}
+.journey-finale .journey-map {
+  margin-bottom: 24px;
+}
+@media (max-width: 600px) {
+  .journey-detail-summary {
+    gap: 12px;
+  }
+  .journey-detail-summary > button {
+    margin-left: 0;
+  }
+  .map-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .map-detail-art {
+    height: 85px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .map-marker-image,
+  .flow-ribbon {
+    transition: none;
+  }
+}
+
+.flow-legend button[aria-pressed="true"] {
+  background: #69745b18;
+  border-color: var(--sage);
+}
+
+/* Geographic atlas: a single westward corridor, with turn histories on demand. */
+.geographic-map .journey-map-scroll {
+  max-height: none;
+  background: #e5d7ad;
+}
+.geographic-map .journey-map-canvas {
+  min-width: 1100px;
+  aspect-ratio: 16 / 9;
+}
+.journey-map-background {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  display: block;
+}
+.geographic-map .map-route-shadow {
+  stroke: #f4ebcf;
+  stroke-width: 10;
+  opacity: 0.85;
+}
+.map-route-remaining {
+  fill: none;
+  stroke: #74644870;
+  stroke-width: 3;
+  stroke-dasharray: 3 8;
+}
+.geographic-map .map-route {
+  stroke: #684c31;
+  stroke-width: 4;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.map-landmark circle {
+  fill: #5c543b;
+}
+.map-landmark text {
+  fill: #514e38;
+  font:
+    15px Georgia,
+    serif;
+  paint-order: stroke;
+  stroke: #f0e4bc;
+  stroke-width: 4;
+  stroke-linejoin: round;
+}
+.map-geographic-label {
+  fill: #424e3ec9;
+  font:
+    17px Georgia,
+    serif;
+  letter-spacing: 0.15em;
+  paint-order: stroke;
+  stroke: #e7d6a5aa;
+  stroke-width: 3;
+}
+.map-compass {
+  stroke: #585e43;
+  fill: #585e43;
+  stroke-width: 1.5;
+}
+.map-compass text {
+  stroke: none;
+  font:
+    18px Georgia,
+    serif;
+}
+.geographic-map .map-marker {
+  width: 40px;
+  gap: 3px;
+}
+.geographic-map .map-marker-image {
+  width: 31px;
+  height: 31px;
+  border-width: 2px;
+}
+.geographic-map .map-marker.is-endpoint {
+  width: 110px;
+}
+.geographic-map .map-marker.is-endpoint .map-marker-image {
+  width: 43px;
+  height: 43px;
+}
+.geographic-map .map-marker.is-quiet .map-marker-image {
+  width: 11px;
+  height: 11px;
+}
+.geographic-map .map-marker-label {
+  font-size: 10px;
+}
+.geographic-map .map-marker:not(.is-endpoint) .map-marker-label {
+  font:
+    9px "Courier New",
+    monospace;
+  background: #f2e6c2cb;
+  padding: 1px 3px;
+  border-radius: 2px;
+}
+.map-event-connector {
+  stroke: #fff;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+.map-event-dot {
+  fill: #3b5224;
+  stroke: #f5eedc;
+  stroke-width: 1.5;
+}
+
+.map-turn-count {
+  position: absolute;
+  top: -5px;
+  right: -2px;
+  background: #59654b;
+  color: #fff6df;
+  font:
+    8px "Courier New",
+    monospace;
+  padding: 2px 3px;
+  border-radius: 3px;
+}
+.map-destination-label {
+  position: absolute;
+  text-align: center;
+  transform: translate(-50%, -50%);
+  color: #4a533b;
+  font:
+    18px Georgia,
+    serif;
+  text-shadow:
+    0 0 3px #f2e4b6,
+    0 0 3px #f2e4b6;
+}
+.map-destination-label small {
+  font-size: 12px;
+}
+.journey-map-tooltip {
+  position: fixed;
+  z-index: 10000;
+  width: min(460px, calc(100vw - 24px));
+  max-height: min(570px, calc(100vh - 24px));
+  overflow: auto;
+  padding: 16px;
+  background: var(--paper) url("./assets/paper.webp");
+  border: 1px solid #8b795b80;
+  border-radius: 6px;
+  box-shadow: 0 10px 35px #36342645;
+  text-align: left;
+  box-sizing: border-box;
+}
+.map-tooltip-summary {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 13px;
+  align-items: start;
+}
+.map-tooltip-summary .map-detail-art {
+  height: 78px;
+}
+.journey-map-tooltip h4 {
+  font:
+    20px Georgia,
+    serif;
+  margin: 0 0 8px;
+}
+.journey-map-tooltip p {
+  margin: 7px 0;
+  font-size: 12px;
+  line-height: 1.55;
+}
+.journey-map-tooltip .eyebrow {
+  font-size: 9px;
+}
+.map-turn-history {
+  display: grid;
+  gap: 14px;
+  margin-top: 16px;
+}
+.map-turn {
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.map-turn-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 9px;
+}
+.map-turn-heading .portrait {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+}
+.map-turn-heading strong {
+  font:
+    14px Georgia,
+    serif;
+}
+.map-turn-heading small {
+  display: block;
+  color: var(--quiet);
+  font-size: 10px;
+  margin-top: 3px;
+}
+.map-turn-action {
+  padding: 4px 0 8px 38px;
+}
+.map-turn-action > strong {
+  font-size: 11px;
+  color: #5b694b;
+}
+.map-turn-action .map-supplies {
+  gap: 8px;
+}
+.map-turn-action .supply-label {
+  font-size: 10px;
+}
+.map-turn-action .supply-stack {
+  transform: scale(0.8);
+  transform-origin: center;
+}
+.map-record-note {
+  color: var(--quiet);
+  font-style: italic;
+}
+.journey-finale .geographic-map .journey-map-scroll {
+  max-height: 470px;
+}
+
+/* The atlas is a destination of its own, with a camera rather than page scrolling. */
+body.is-map-view {
+  overflow: hidden;
+}
+body.is-map-view #app {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+.journey-atlas-view {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100dvh;
+  overflow: hidden;
+}
+.atlas-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-shrink: 0;
+  padding: 14px 20px;
+  margin: 0;
+  min-height: 76px;
+  border-bottom: 1px solid var(--line);
+  background: #efe7d2;
+}
+.atlas-toolbar h1 {
+  font:
+    23px Georgia,
+    serif;
+  margin: 0 0 5px;
+}
+.atlas-toolbar button {
+  font-size: 12px;
+  padding: 8px 12px;
+  white-space: nowrap;
+}
+.atlas-route-label {
+  margin: 0 auto;
+  color: var(--quiet);
+  font:
+    italic 15px Georgia,
+    serif;
+}
+.journey-atlas-view .map-partial {
+  margin: 0;
+  padding: 6px 20px;
+  background: #efe7d2;
+  font-size: 10px;
+}
+.journey-atlas-view .journey-map {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  margin: 0;
+}
+.journey-atlas-view .journey-map-scroll {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  border: 0;
+  border-radius: 0;
+  cursor: grab;
+  touch-action: none;
+  overscroll-behavior: contain;
+  user-select: none;
+  background: #cbbd98;
+}
+.journey-map-stage {
+  width: max-content;
+  min-width: 100%;
+  min-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.journey-atlas-view .journey-map-canvas {
+  min-width: 0;
+  flex-shrink: 0;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+}
+.journey-map-scroll.is-panning,
+.journey-map-scroll.is-panning * {
+  cursor: grabbing;
+}
+.journey-map-scroll img {
+  -webkit-user-drag: none;
+}
+.map-tools {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px;
+  border: 1px solid #8b795b70;
+  border-radius: 5px;
+  background: #f2e9d4eb;
+  box-shadow: 0 2px 10px #3b40251a;
+}
+.map-tools button {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  padding: 5px;
+  font-size: 21px;
+  background: transparent;
+}
+.map-tools button svg {
+  width: 22px;
+  height: 22px;
+}
+.map-zoom-level {
+  min-width: 46px;
+  text-align: center;
+  color: var(--quiet);
+  font:
+    11px "Courier New",
+    monospace;
+}
+.map-key {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 10px 20px;
+  background: #efe7d2;
+  border-top: 1px solid var(--line);
+  font-size: 11px;
+  color: var(--quiet);
+}
+.map-key > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.map-key i {
+  width: 24px;
+  display: block;
+}
+.map-key-complete {
+  border-top: 4px solid #4a5d32;
+}
+.map-key-remaining {
+  border-top: 2px dashed #675f4d;
+  opacity: 0.6;
+}
+.map-key small {
+  margin-left: auto;
+  font-size: 10px;
+}
+.geographic-map .map-route-shadow {
+  stroke: #fbf1d5;
+  stroke-width: 11;
+}
+.geographic-map .map-route-remaining {
+  stroke: #675f4d;
+  stroke-width: 2;
+  opacity: 0.65;
+  stroke-dasharray: 3 9;
+}
+.geographic-map .map-route {
+  stroke: #3b5224;
+  stroke-width: 6;
+}
+.geographic-map .map-marker.is-quiet {
+  width: 22px;
+  height: 22px;
+  padding: 5px;
+}
+.geographic-map .map-marker.is-quiet .map-marker-image {
+  width: 9px;
+  height: 9px;
+  background: #52623d;
+  border-width: 1.5px;
+}
+.final-overlay-map,
+.view-final-map,
+.finale-map {
+  background: #69745b14;
+  border-color: #69745b66;
+}
+.finale-map {
+  margin: 20px 0 12px;
+}
+@media (max-width: 600px) {
+  .atlas-toolbar {
+    gap: 10px;
+    padding: 10px;
+    flex-wrap: wrap;
+  }
+  .atlas-toolbar h1 {
+    font-size: 20px;
+  }
+  .atlas-toolbar > button:last-child {
+    margin-left: auto;
+  }
+  .atlas-route-label {
+    display: none;
+  }
+  .map-key {
+    padding: 8px 12px;
+    gap: 14px;
+  }
+  .map-key small {
+    display: none;
+  }
+  .map-tools {
+    top: 10px;
+    right: 10px;
+  }
+  .geographic-map .map-marker-image {
+    width: 25px;
+    height: 25px;
+  }
+  .geographic-map .map-marker.is-endpoint .map-marker-image {
+    width: 32px;
+    height: 32px;
+  }
+}
+
+.geographic-map .map-route-shadow {
+  stroke: #f3e6c8;
+  stroke-width: 5;
+  opacity: 0.45;
+}
+.geographic-map .map-route-remaining {
+  stroke: #655d47;
+  opacity: 0.6;
+  stroke-width: 2.5;
+  stroke-dasharray: 3 8;
+}
+.map-route-completed-halo {
+  fill: none;
+  stroke: #fff4d4;
+  stroke-width: 10;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.journey-map-preview {
+  display: block;
+  position: relative;
+  width: 100%;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid #8b795b70;
+  border-radius: 5px;
+  background: #d6c69e;
+  text-align: left;
+}
+.journey-map-preview > svg {
+  display: block;
+  width: 100%;
+  height: 160px;
+}
+.map-preview-travelled {
+  fill: none;
+  stroke: #3b5224;
+  stroke-width: 6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.map-preview-caption {
+  position: absolute;
+  inset: auto 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 15px;
+  background: linear-gradient(transparent, #eee4cce8 30%);
+  color: #414c32;
+}
+.map-preview-caption strong {
+  font:
+    16px Georgia,
+    serif;
+}
+.map-preview-caption > span {
+  font-size: 11px;
+  white-space: nowrap;
+}
+.journey-map-preview:hover:not(:disabled) {
+  border-color: #53654b;
+}
+.turn-map-preview {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.turn-map-preview .journey-map-preview > svg {
+  height: 120px;
+}
+.turn-map-preview .map-preview-caption strong {
+  font-size: 14px;
+}
+.journey-finale .journey-map-preview {
+  margin: 20px 0 14px;
+}
+@media (max-width: 500px) {
+  .map-preview-caption {
+    padding: 10px;
+    gap: 6px;
+  }
+  .map-preview-caption strong {
+    font-size: 14px;
+  }
+}
+
+.map-inheritance {
+  margin: 12px 0 8px 38px;
+  padding-top: 12px;
+  border-top: 1px solid #6d745f30;
+}
+.map-inheritance-group {
+  margin-top: 16px;
+}
+.map-inheritance-group > strong,
+.map-inheritance-recipient {
+  font-size: 12px;
+}
+.map-inheritance-recipient {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.map-inheritance-recipient .portrait,
+.map-inheritance-recipient img {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+.map-inheritance .map-supplies {
+  gap: 16px;
+  margin-top: 10px;
+}
+.map-turn .timeline-supply-change .supply-stack {
+  transform: none;
+}
+
+.map-trail-dot {
+  position: absolute;
+  z-index: 2;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+  transform: translate(-50%, -50%);
+  cursor: pointer;
+}
+.map-trail-dot:hover,
+.map-trail-dot:focus-visible {
+  background: #f5eedc33;
+  outline: 1px solid #59654b;
+  outline-offset: -3px;
+  transform: translate(-50%, -50%);
+  box-shadow: none;
+}
+
+/* The SVG anchor is the sole visible dot; this button supplies its hit area. */
+.geographic-map .map-marker.is-quiet .map-marker-image {
+  opacity: 0;
+}
+.geographic-map .map-marker.is-quiet:hover,
+.geographic-map .map-marker.is-quiet:focus-visible {
+  outline: 1px solid #59654b;
+  outline-offset: -3px;
+  border-radius: 50%;
+}
+
+.map-turn-badge {
+  display: inline-block;
+  padding: 3px 6px;
+  margin-right: 5px;
+  border: 1px solid #6b735b55;
+  border-radius: 4px;
+  background: #6b735b17;
+  color: #566147;
+  font:
+    10px "Courier New",
+    monospace;
+  white-space: nowrap;
+}
+.map-event-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+}
+.map-event-heading > strong {
+  font-size: 11px;
+  color: #5b694b;
+}
+.map-event-visual {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 3px;
+}
+.map-event-die {
+  width: 42px;
+  height: 42px;
+  filter: drop-shadow(0 2px 1px #463e332f);
+}
+.map-event-symbol {
+  width: 28px;
+  height: 28px;
+  color: #6a7656;
+}
+.map-event-card {
+  display: block;
+  width: 29px;
+  height: 40px;
+  padding: 3px;
+  border: 1px solid #75785d;
+  background: #ece3c9;
+  border-radius: 2px;
+  box-shadow: 2px 2px 0 #5c604331;
+  transform: rotate(-5deg);
+}
+.map-event-card img {
+  display: block;
+  width: 100%;
+  height: 24px;
+  object-fit: cover;
+}
+.map-event-card > span {
+  display: block;
+  width: 70%;
+  height: 2px;
+  background: #74795c;
+  margin: 4px auto 0;
+}
+.map-event-memorial {
+  width: min(260px, 100%);
+  margin: 12px auto;
+}
+.map-event-memorial .memorial-rip {
+  font-size: 19px;
+}
+.map-event-memorial .memorial-inscription > h3 {
+  font-size: 17px;
+  margin: 7px 0;
+}
+.map-event-memorial .memorial-dates {
+  font-size: 10px;
+  line-height: 1.5;
+}
+.map-event-memorial .memorial-dates small {
+  display: block;
+  margin-top: 3px;
+}
+.map-event-memorial .memorial-epitaph {
+  font:
+    italic 11px/1.45 Georgia,
+    serif;
+  margin-top: 12px;
+}
+
+.map-fallback-grave {
+  display: block;
+  width: 180px;
+  margin: 12px auto;
 }
 
 .supply-stack > .supply-change-bubble {
