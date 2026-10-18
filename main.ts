@@ -9,6 +9,7 @@ import {
   description,
   portraitBirthdays,
   journeyDate,
+  nextJourneyStartDate,
   calendarDate,
   hazardDeadline,
   type TrailCard,
@@ -3234,13 +3235,22 @@ app.addEventListener("click", async (event) => {
     }
     return;
   } else if (d.action === "start") {
+    const startDate = nextJourneyStartDate(
+      history
+        ? history.archive.games.map((record) => record.initial.startDate)
+        : game.state.started
+          ? [game.state.startDate]
+          : [],
+    );
     changed = game.reset(
       party.map((p) => p.name),
       firstPlayer,
       party.map((p) => p.portrait),
     );
-    if (changed) setup = false;
-    else {
+    if (changed) {
+      game.state.startDate = startDate;
+      setup = false;
+    } else {
       Array.from(app.querySelectorAll<HTMLInputElement>(".player-name"))
         .find((input) => !input.checkValidity())
         ?.reportValidity();

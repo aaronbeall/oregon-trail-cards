@@ -113,6 +113,21 @@ export function journeyDate(days: number, start = JOURNEY_START_DATE) {
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
 }
+export function nextJourneyStartDate(previous: (string | undefined)[]) {
+  // Journey numbering supplies a stable baseline for older saves sharing April 1.
+  let next = journeyDate(previous.length);
+  for (const date of previous) {
+    if (
+      !date ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+      !Number.isFinite(Date.parse(date))
+    )
+      continue;
+    const following = journeyDate(1, date);
+    if (following > next) next = following;
+  }
+  return next;
+}
 export function calendarDate(date: string) {
   return new Intl.DateTimeFormat("en-US", {
     month: "short",

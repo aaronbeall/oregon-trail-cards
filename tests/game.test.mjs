@@ -19,6 +19,7 @@ const {
   names,
   portraitBirthdays,
   journeyDate,
+  nextJourneyStartDate,
   JOURNEY_START_DATE,
   hazardDeadline,
 } = await import(
@@ -712,4 +713,17 @@ test("remedy deadline counts living player turns through the actual fatal deadli
   g.state.current = 2;
   assert.deepEqual(hazardDeadline(g.state, h), { turns: 2, player: 0 });
   assert.equal(hazardDeadline(g.state, { ...h, rounds: null }), undefined);
+});
+
+test("new journeys advance their fictional departure date without changing existing dates", () => {
+  assert.equal(nextJourneyStartDate([]), "1847-04-01");
+  assert.equal(nextJourneyStartDate(["1847-04-01"]), "1847-04-02");
+  assert.equal(
+    nextJourneyStartDate(["1847-04-01", "1847-04-02"]),
+    "1847-04-03",
+  );
+  assert.equal(nextJourneyStartDate([undefined, "1847-04-01"]), "1847-04-03");
+  const dates = ["1847-04-30", "1847-04-02"];
+  assert.equal(nextJourneyStartDate(dates), "1847-05-01");
+  assert.deepEqual(dates, ["1847-04-30", "1847-04-02"]);
 });
