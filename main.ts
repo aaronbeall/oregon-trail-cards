@@ -165,9 +165,16 @@ document.documentElement.style.setProperty(
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
 let busy = false,
   active: gsap.core.Timeline | null = null;
+let pendingNewJourney = false;
 function setBusy(b: boolean) {
   busy = b;
   app.setAttribute("aria-busy", String(b));
+  if (!b && pendingNewJourney) {
+    pendingNewJourney = false;
+    queueMicrotask(() =>
+      app.querySelector<HTMLButtonElement>('[data-action="new"]')?.click(),
+    );
+  }
 }
 function playTimeline(build: (tl: gsap.core.Timeline) => void) {
   return new Promise<void>((resolve) => {
@@ -2168,10 +2175,16 @@ app.addEventListener("click", async (event) => {
   const target = (event.target as Element).closest<HTMLButtonElement>(
     '[data-action="stats"], [data-action="stats-back"], [data-action="journeys"], [data-stats-filter], [data-open-journey], [data-action="new"]',
   );
-  if (!target || busy || target.disabled) return;
-  if (target.dataset.action === "new" && !showStatistics && !showJourneys)
+  if (!target || target.disabled) return;
+  if (busy) {
+    if (target.dataset.action === "new") {
+      pendingNewJourney = true;
+      event.stopImmediatePropagation();
+    }
     return;
+  }
   event.stopImmediatePropagation();
+  const creating = target.dataset.action === "new";
   const filtering = target.dataset.statsFilter !== undefined;
   const opening = target.dataset.openJourney;
   setBusy(true);
@@ -2232,12 +2245,15 @@ app.addEventListener("click", async (event) => {
     } else {
       showStatistics = false;
       showJourneys = false;
-      if (target.dataset.action === "new" && !setup) confirming = true;
+      if (creating) confirming = !setup;
     }
     render();
     if (!filtering)
       window.scrollTo({
-        top: showStatistics || showJourneys || opening ? 0 : journeyScroll,
+        top:
+          showStatistics || showJourneys || opening || creating
+            ? 0
+            : journeyScroll,
         behavior: "instant",
       });
     if (!reducedMotion.matches)
@@ -2263,11 +2279,15 @@ app.addEventListener("click", async (event) => {
         render();
       }
     }
-    const focus = showStatistics
-      ? "#stats-heading"
-      : showJourneys
-        ? "#journey-browser-heading"
-        : '[data-action="journeys"]';
+    const focus = creating
+      ? setup
+        ? ".player-name"
+        : '[data-action="confirm-new"]'
+      : showStatistics
+        ? "#stats-heading"
+        : showJourneys
+          ? "#journey-browser-heading"
+          : '[data-action="journeys"]';
     if (filtering)
       app
         .querySelector<HTMLButtonElement>(
@@ -3341,10 +3361,6 @@ app.addEventListener("click", async (event) => {
       .querySelectorAll<HTMLInputElement>('[name="payment"]:checked')
       .forEach((input) => (input.checked = false));
     app.querySelector<HTMLSelectElement>("#trade-kind")!.value = "";
-  } else if (d.action === "new") {
-    if (setup) return;
-    confirming = true;
-    changed = true;
   } else if (d.action === "cancel") {
     confirming = false;
     changed = true;
