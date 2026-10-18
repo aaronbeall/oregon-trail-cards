@@ -31,6 +31,10 @@ const emblems: Record<Supply, { color: string; icon: string }> = {
   },
 };
 
+export function supplyColor(kind: Supply) {
+  return emblems[kind].color;
+}
+
 /** Small stacks suggest multiples; the badge always gives the exact quantity. */
 export function supplyEmblem(kind: Supply, quantity = 1, count = false) {
   const { color, icon } = emblems[kind];

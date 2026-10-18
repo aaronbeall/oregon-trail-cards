@@ -899,6 +899,10 @@ footer p {
   border-color: var(--sage);
 }
 .hand-card .trail-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: stretch;
   width: 100%;
   border: 0;
   box-shadow: none;
@@ -4031,4 +4035,342 @@ button.wagon-condition:focus-visible {
 .settlement-departure button {
   background: transparent;
   color: var(--quiet);
+}
+
+/* A turn is a list of self-contained choices; shared state and trading sit outside it. */
+.turn-decision {
+  margin: 28px 0;
+  padding: 24px;
+  border: 1px solid #69745b66;
+  border-radius: 8px;
+  background: #f7f1e3b3;
+  box-shadow: 0 8px 24px #41483b0a;
+}
+.turn-decision > .eyebrow {
+  color: #52634b;
+}
+.turn-decision .turn-header {
+  padding-bottom: 20px;
+  margin-bottom: 22px;
+  border-bottom: 1px solid var(--line);
+}
+.turn-options {
+  display: grid;
+  gap: 42px;
+}
+.turn-option {
+  --option-color: #53654b;
+  --option-wash: #69745b0c;
+  position: relative;
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid #69745b45;
+  border-radius: 6px;
+  background: var(--option-wash);
+}
+.turn-option.is-urgent {
+  --option-color: #884b36;
+  --option-wash: #a26c5612;
+  border-color: #a26c566b;
+}
+.turn-option + .turn-option::before {
+  content: "or";
+  position: absolute;
+  top: -31px;
+  left: 0;
+  right: 0;
+  color: var(--quiet);
+  font:
+    italic 12px Georgia,
+    serif;
+  text-align: center;
+  line-height: 20px;
+  background:
+    linear-gradient(var(--line), var(--line)) left center / calc(50% - 23px) 1px
+      no-repeat,
+    linear-gradient(var(--line), var(--line)) right center / calc(50% - 23px)
+      1px no-repeat;
+}
+.option-summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+.option-art {
+  width: 96px;
+  height: 88px;
+  flex: 0 0 96px;
+  border-radius: 4px;
+  object-fit: cover;
+}
+.option-symbol {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  border-radius: 8px;
+  background: #69745b15;
+  color: var(--option-color);
+}
+.option-symbol .action-icon {
+  width: 26px;
+  height: 26px;
+}
+.option-copy {
+  min-width: 0;
+}
+.option-copy h3 {
+  margin: 0;
+  font:
+    21px Georgia,
+    serif;
+  color: var(--option-color);
+}
+.option-copy p {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--quiet);
+}
+.option-controls {
+  align-items: flex-start;
+  margin-top: 16px;
+  gap: 10px;
+}
+.option-controls > button,
+.remedy-choice > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 42px;
+  padding: 10px 16px;
+  color: #faf3e4;
+  background: var(--option-color);
+  border: 1px solid var(--option-color);
+  border-radius: 4px;
+  box-shadow: 0 2px 0 #41483b1a;
+}
+.option-controls button:disabled {
+  opacity: 0.5;
+  box-shadow: none;
+}
+.option-controls > button:has(.supply-token) {
+  background: #e9e1cc;
+  color: var(--option-color);
+}
+.option-controls button:not(:disabled):hover {
+  filter: brightness(1.08);
+}
+.option-controls button:focus-visible {
+  outline: 2px solid var(--option-color);
+  outline-offset: 3px;
+}
+.remedy-choice {
+  display: grid;
+  gap: 5px;
+}
+.remedy-choice button small {
+  display: block;
+  font-size: 10px;
+  margin-top: 3px;
+}
+.action-unavailable {
+  max-width: 220px;
+  color: #884b36;
+  font-size: 10px;
+}
+.option-controls > .portrait {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+}
+.option-controls > .hand {
+  width: 100%;
+  margin: 0;
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+  gap: 10px;
+}
+.turn-option .hand-card {
+  max-width: 235px;
+}
+
+.turn-option .hand-card .trail-card {
+  flex: 1;
+}
+.trail-area {
+  padding: 18px 0;
+  border-bottom: 1px solid var(--line);
+}
+.passive-shop {
+  margin-top: 32px;
+  border-color: #bdb69b70;
+  box-shadow: none;
+  background: #bdb69b0a;
+}
+.passive-shop .shop-toggle {
+  background: transparent;
+}
+.passive-shop .shop-toggle > img {
+  width: 70px;
+  height: 64px;
+}
+.passive-shop .shop-toggle strong {
+  font-size: 19px;
+}
+.player.unwell .condition-status,
+.wagon-condition {
+  animation: condition-breathe 3.2s ease-in-out infinite;
+}
+@keyframes condition-breathe {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 0 #a26c5600,
+      inset 0 0 0 1px #a26c5610;
+  }
+  50% {
+    box-shadow:
+      0 0 0 4px #a26c5640,
+      0 0 12px 2px #a26c5624,
+      inset 0 0 0 1px #a26c5660;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .player.unwell .condition-status,
+  .wagon-condition {
+    animation: none;
+  }
+}
+@media (max-width: 600px) {
+  .turn-decision {
+    padding: 16px 10px;
+    margin: 22px 0;
+  }
+  .turn-option {
+    padding: 12px;
+  }
+  .option-summary {
+    gap: 10px;
+  }
+  .option-art {
+    width: 64px;
+    height: 72px;
+    flex-basis: 64px;
+  }
+  .option-copy h3 {
+    font-size: 18px;
+  }
+  .option-controls > .hand {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .turn-decision .turn-header .supply-hand {
+    max-width: 100%;
+  }
+  .option-controls > button {
+    flex-wrap: wrap;
+    padding: 9px 12px;
+  }
+}
+
+.turn-decision .turn-state-window {
+  margin-top: 0;
+  border-top: 0;
+}
+.turn-options::after {
+  display: none;
+}
+.option-copy h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.option-copy h3 .portrait {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+}
+.option-controls button > .supply-token > .supply-label {
+  display: none;
+}
+
+.option-notices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 12px;
+}
+.action-notice {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 5px 8px;
+  border: 1px solid #8b795b40;
+  border-radius: 4px;
+  background: #c3ad7b20;
+  color: #6d6149;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+.action-notice.is-danger {
+  color: #884b36;
+  background: #a26c561a;
+  border-color: #a26c5640;
+}
+.action-notice .action-icon {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
+}
+.remedy-choice {
+  flex: 0 1 230px;
+  min-width: 0;
+  align-content: start;
+}
+.remedy-choice > button {
+  width: 100%;
+  min-height: 64px;
+  text-align: left;
+  justify-content: flex-start;
+}
+.remedy-choice > button > .action-icon {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.remedy-choice > button > .supply-token {
+  flex-shrink: 0;
+}
+.remedy-choice .action-unavailable {
+  line-height: 1.5;
+}
+@media (max-width: 500px) {
+  .remedy-choice {
+    flex-basis: 100%;
+  }
+}
+
+/* The condition is dangerous; helping is a positive action. */
+.turn-option.is-urgent .option-controls > button,
+.turn-option.is-urgent .remedy-choice > button {
+  background: #536b50;
+  border-color: #536b50;
+  color: #faf3e4;
+}
+.turn-option.is-urgent .option-controls button:focus-visible {
+  outline-color: #536b50;
+}
+.turn-option.is-urgent .action-unavailable {
+  color: var(--quiet);
+}
+
+.turn-option.is-urgent .remedy-choice > button {
+  background: var(--remedy-color);
+  border-color: var(--remedy-color);
+}
+.turn-option.is-urgent .remedy-choice > button:focus-visible {
+  outline-color: var(--remedy-color);
 }

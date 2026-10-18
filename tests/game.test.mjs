@@ -20,6 +20,7 @@ const {
   portraitBirthdays,
   journeyDate,
   JOURNEY_START_DATE,
+  hazardDeadline,
 } = await import(
   `data:text/javascript;base64,${Buffer.from(source).toString("base64")}`
 );
@@ -275,10 +276,16 @@ test("a town can clear inadequate grass instead of taking a supply", () => {
   assert.equal(g.state.phase, "town");
   assert.ok(g.state.hazards.some((h) => h.id === grass.id));
   assert.equal(g.townCure(grass.id), true);
-  assert.equal(g.state.hazards.some((h) => h.id === grass.id), false);
+  assert.equal(
+    g.state.hazards.some((h) => h.id === grass.id),
+    false,
+  );
   assert.ok(g.state.discarded.includes("grass"));
   assert.equal(g.state.phase, "turn");
-  assert.deepEqual(g.state.players.map((p) => p.supplies), supplies);
+  assert.deepEqual(
+    g.state.players.map((p) => p.supplies),
+    supplies,
+  );
   assert.deepEqual(g.state.shop, shop);
 });
 
@@ -672,4 +679,37 @@ test("automatic losses sample actual supply cards and preserve the result for re
     readSave(JSON.stringify(g.state)).lastSupplyLoss,
     g.state.lastSupplyLoss,
   );
+});
+
+test("remedy deadline counts living player turns through the actual fatal deadline", () => {
+  const g = fresh();
+  const h = {
+    id: 1000,
+    kind: "typhoid",
+    owner: 0,
+    needs: { medicine: 1 },
+    rounds: 1,
+    waiting: [1, 2, 0],
+    born: 0,
+    skip: 0,
+  };
+  g.state.current = 1;
+  assert.deepEqual(hazardDeadline(g.state, h), { turns: 3, player: 0 });
+  assert.deepEqual(hazardDeadline(g.state, { ...h, rounds: 2 }), {
+    turns: 6,
+    player: 0,
+  });
+  g.state.current = 0;
+  assert.deepEqual(hazardDeadline(g.state, { ...h, waiting: [0] }), {
+    turns: 1,
+    player: 0,
+  });
+  assert.deepEqual(hazardDeadline(g.state, { ...h, born: g.state.turn }), {
+    turns: 4,
+    player: 0,
+  });
+  g.state.players[1].alive = false;
+  g.state.current = 2;
+  assert.deepEqual(hazardDeadline(g.state, h), { turns: 2, player: 0 });
+  assert.equal(hazardDeadline(g.state, { ...h, rounds: null }), undefined);
 });

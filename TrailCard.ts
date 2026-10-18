@@ -177,6 +177,28 @@ export type Journey = {
   trailReports?: Record<number, TrailReport>;
   lastSupplyLoss?: SupplyLoss;
 };
+/** Count actual player turns, including this turn, until this condition expires. */
+export function hazardDeadline(s: Journey, hazard: Hazard) {
+  if (hazard.rounds === null || hazard.rounds <= 0) return;
+  const living = s.players.flatMap((p, i) => (p.alive ? [i] : []));
+  if (!living.length) return;
+  let waiting = new Set(hazard.waiting.filter((i) => s.players[i]?.alive));
+  let rounds = hazard.rounds;
+  let turns = 0;
+  for (let offset = 0; ; offset++) {
+    const player = (s.current + offset) % s.players.length;
+    if (!s.players[player].alive) continue;
+    turns++;
+    // A condition drawn this turn starts counting on the following turn.
+    if (offset === 0 && hazard.born === s.turn) continue;
+    waiting.delete(player);
+    if (!waiting.size) {
+      if (--rounds === 0) return { turns, player };
+      waiting = new Set(living);
+    }
+  }
+}
+
 export function ends(c: TrailCard): [Position, Position] {
   return c.rotated
     ? [(2 - c.right) as Position, (2 - c.left) as Position]

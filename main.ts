@@ -10,6 +10,7 @@ import {
   portraitBirthdays,
   journeyDate,
   calendarDate,
+  hazardDeadline,
   type TrailCard,
   type Supply,
   type Hazard,
@@ -22,7 +23,7 @@ import "./style.css";
 import { randomName, randomParty, portraitSlots } from "./Party";
 import { gsap } from "gsap";
 import { reconcile } from "./Render";
-import { supplyEmblem } from "./Supplies";
+import { supplyEmblem, supplyColor } from "./Supplies";
 import { GameHistory, replayGame, type GameAction } from "./History";
 const key = "oregon-trail-cards.official.v2";
 let saved;
@@ -209,6 +210,24 @@ async function scrollTrailToEnd() {
   else
     await playTimeline((tl) =>
       tl.to(strip, { scrollLeft: end, duration: 0.36, ease: "power2.inOut" }),
+    );
+}
+async function scrollUpToState(target: Element | null | undefined) {
+  if (!target) return;
+  const top = Math.max(
+    0,
+    target.getBoundingClientRect().top + window.scrollY - 24,
+  );
+  // Keep the user's view when the destination is already below the viewport top.
+  if (top >= window.scrollY - 1) return;
+  if (reducedMotion.matches) window.scrollTo({ top, behavior: "instant" });
+  else
+    await playTimeline((tl) =>
+      tl.to(document.scrollingElement, {
+        scrollTop: top,
+        duration: 0.3,
+        ease: "power2.inOut",
+      }),
     );
 }
 async function flyPickup(
@@ -401,6 +420,10 @@ const button = (action: string, text: string, disabled = false) =>
   `<button data-action="${action}" ${disabled ? "disabled" : ""}>${text}</button>`;
 function actionIcon(kind: string) {
   const drawings: Record<string, string> = {
+    warning:
+      '<path d="M10.3 3.9a2 2 0 0 1 3.4 0l8 14A2 2 0 0 1 20 21H4a2 2 0 0 1-1.7-3.1Z" fill="currentColor" stroke="none"/><path d="M12 8v6" stroke="var(--paper)" stroke-width="2"/><circle cx="12" cy="17" r="1" fill="var(--paper)" stroke="none"/>',
+    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+    play: '<path d="M4 16V4h12M7 19V7h12"/><rect x="10" y="10" width="11" height="12" rx="1"/>',
     roll: '<rect x="4" y="4" width="16" height="16" rx="3"/><circle cx="8" cy="8" r="1" fill="currentColor"/><circle cx="12" cy="12" r="1" fill="currentColor"/><circle cx="16" cy="16" r="1" fill="currentColor"/>',
     draw: '<path d="M4 16V4h12M7 19V7h12"/><rect x="10" y="10" width="11" height="12" rx="1"/>',
     skip: '<path d="M18 4a8 8 0 1 0 2 12A8 8 0 0 1 18 4Z"/>',
@@ -509,7 +532,7 @@ function playerTag(index: number) {
 function handCard(c: TrailCard, i: number) {
   const rotatable =
     c.type !== "town" && c.type !== "fort" && c.left + c.right !== 2;
-  return `<article data-ui-key="trail-card-${c.id}" class="hand-card ${game.canPlay(c) ? "matches" : ""}" data-hand-index="${i}"><button class="trail-card" data-play="${i}" ${!game.canPlay(c) ? "disabled" : ""} aria-label="Play ${label(c)}">${card(c)}<div class="card-title">${c.type === "river" ? "River crossing" : label(c)}</div>${c.type === "river" ? riverFailureTag(!!c.deadly) : ""}<div class="card-description">${c.type === "river" ? (c.deadly ? "A raging river blocks the trail. Brave the current to reach the far bank." : "The trail meets a flowing river. Ford the water to carry on.") : description(c)}</div><div class="card-caption">${c.type === "town" || c.type === "fort" ? "Connects any road" : game.matches(c) ? "Road connects" : game.matches({ ...c, rotated: !c.rotated }) ? "Rotate to connect" : "Edges do not meet"}</div></button>${rotatable ? `<button class="rotate" data-rotate="${i}" ${game.state.phase !== "turn" || game.state.status !== "travel" ? "disabled" : ""} aria-label="Rotate ${label(c)} 180 degrees">↻ Rotate 180°</button>` : ""}</article>`;
+  return `<article data-ui-key="trail-card-${c.id}" class="hand-card ${game.canPlay(c) ? "matches" : ""}" data-hand-index="${i}"><button class="trail-card" data-play="${i}" ${!game.canPlay(c) ? "disabled" : ""} aria-label="Play ${label(c)}">${card(c)}<div class="card-title">${c.type === "river" ? "River crossing" : label(c)}</div>${c.type === "river" ? riverFailureTag(!!c.deadly) : ""}<div class="card-description">${c.type === "river" ? (c.deadly ? "A raging river blocks the trail. Brave the current to reach the far bank." : "The trail meets a flowing river. Ford the water to carry on.") : description(c)}</div>${game.canPlay(c) ? "" : `<div class="card-caption">${game.matches({ ...c, rotated: !c.rotated }) ? "Rotate to connect" : "Does not connect"}</div>`}</button>${rotatable ? `<button class="rotate" data-rotate="${i}" ${game.state.phase !== "turn" || game.state.status !== "travel" ? "disabled" : ""} aria-label="Rotate ${label(c)} 180 degrees">↻ Rotate 180°</button>` : ""}</article>`;
 }
 const wagonKinds = new Set<Hazard["kind"]>([
   "axle",
@@ -520,21 +543,57 @@ const wagonKinds = new Set<Hazard["kind"]>([
   "grass",
 ]);
 function playerCalamities() {
-  const s = game.state;
-  if (s.status !== "travel" || s.phase === "legacy") return "";
-  const shared = s.hazards.filter(
-    (h) =>
-      wagonKinds.has(h.kind) &&
-      Object.values(h.needs).some((count) => count! > 0),
+  if (game.state.status !== "travel" || game.state.phase === "legacy")
+    return "";
+  return hazards(
+    game.state.hazards
+      .filter((h) => Object.values(h.needs).some((count) => count! > 0))
+      .sort((a, b) => (a.rounds ?? Infinity) - (b.rounds ?? Infinity)),
   );
-  const personal = s.hazards.filter((h) => !wagonKinds.has(h.kind));
-  const own = personal.filter((h) => h.owner === s.current);
-  const companions = personal.filter(
-    (h) =>
-      h.owner !== s.current &&
-      Object.values(h.needs).some((count) => count! > 0),
-  );
-  return `${shared.length ? `<div class="turn-wagon-remedies hazards" aria-label="Wagon remedies">${hazards(shared, false, true)}</div>` : ""}${own.length ? `<div class="turn-calamities hazards" aria-label="Your conditions">${hazards(own, false, true)}</div>` : ""}${companions.length ? `<div class="companion-remedies"><p class="eyebrow">Help a companion</p><div class="hazards">${hazards(companions, true, false, true)}</div></div>` : ""}`;
+}
+type ActionNotice = { text: string; icon: string; danger?: boolean };
+function conditionWarning(h: Hazard): ActionNotice[] {
+  if (h.kind === "arm")
+    return [
+      { text: healingCountdown(h), icon: "clock" },
+      { text: "Heals with rest", icon: "end" },
+    ];
+  if (h.rounds !== null) {
+    const deadline = hazardDeadline(game.state, h);
+    if (!deadline) return [];
+    const name = game.state.players[deadline.player].name;
+    const time = `${deadline.turns} player turn${deadline.turns === 1 ? "" : "s"} left, including this turn`;
+    return [
+      {
+        text: wagonKinds.has(h.kind)
+          ? `Remedy before ${name}’s turn ends (${time}), or the journey ends.`
+          : `Treat before ${name}’s turn ends (${time}), or ${game.state.players[h.owner].name} dies.`,
+        icon: "warning",
+        danger: true,
+      },
+    ];
+  }
+  if (h.kind === "grass" || h.kind === "water")
+    return [
+      {
+        text: `Second ${titles[h.kind]}: oxen die`,
+        icon: "warning",
+        danger: true,
+      },
+      {
+        text:
+          h.kind === "grass" ? "Remedy at a town" : "Remedy with clean water",
+        icon: "end",
+      },
+    ];
+  return [
+    { text: "Until treated", icon: "clock" },
+    {
+      text: `Second ${titles[h.kind]}: ${game.state.players[h.owner].name} dies`,
+      icon: "warning",
+      danger: true,
+    },
+  ];
 }
 function healingCountdown(hazard: Hazard) {
   if (hazard.kind !== "arm") return "";
@@ -608,7 +667,7 @@ function playerCard(index: number, turnPlayer = game.state.current) {
   const conditions = s.hazards.filter(
     (h) => h.owner === index && !wagonKinds.has(h.kind),
   );
-  return `<div data-ui-key="player-${index}" class="player ${index === turnPlayer ? "current" : ""} ${!p.alive ? "dead" : conditions.length ? "unwell" : ""}"><div class="player-heading">${portrait(index)}<div><strong>${escape(p.name)} ${!p.alive ? "†" : index === turnPlayer ? '<span class="player-turn-tag">Turn</span>' : ""}</strong>${p.birthday ? `<small class="player-birthday">Born ${calendarDate(p.birthday)}</small>` : ""}</div></div>${p.alive ? playerInventory(index) : `<small class="player-epitaph">${escape(p.epitaph)}</small>`}<div class="player-state" aria-label="${escape(p.name)}’s condition">${(p.alive ? conditions : []).map((h) => `<button class="condition-status" style="--condition-art:url('${calamityArt[h.kind]}')" data-ui-key="condition-${h.id}" data-player-preview="condition" data-player-index="${index}" data-hazard-id="${h.id}" aria-label="${escape(conditionTitle(h.kind, index))}${healingCountdown(h) ? `: ${healingCountdown(h)}` : ""}: condition and remedies"><span>${titles[h.kind]}</span>${healingCountdown(h) ? `<span class="healing-countdown">${healingCountdown(h)}</span>` : ""}</button>`).join("")}${p.alive && !conditions.length ? '<span class="condition-clear">In good health</span>' : ""}</div></div>`;
+  return `<div data-ui-key="player-${index}" class="player ${index === turnPlayer ? "current" : ""} ${!p.alive ? "dead" : conditions.length ? "unwell" : ""}"><div class="player-heading">${portrait(index)}<div><strong>${escape(p.name)} ${!p.alive ? "†" : index === turnPlayer ? '<span class="player-turn-tag">Turn</span>' : ""}</strong>${p.birthday ? `<small class="player-birthday">Born ${calendarDate(p.birthday)}</small>` : ""}</div></div>${p.alive ? playerInventory(index) : `<small class="player-epitaph">${escape(p.epitaph)}</small>`}<div class="player-state" aria-label="${escape(p.name)}’s condition">${(p.alive ? conditions : []).map((h) => `<button class="condition-status" style="--condition-art:url('${calamityArt[h.kind]}')" data-ui-key="condition-${h.id}" data-player-preview="condition" data-player-index="${index}" data-hazard-id="${h.id}" aria-label="${escape(conditionTitle(h.kind, index))}${healingCountdown(h) ? `: ${healingCountdown(h)}` : ""}: condition and remedies"><span>${titles[h.kind]}</span><span class="healing-countdown">${healingCountdown(h) || (h.rounds !== null ? `${h.rounds} round${h.rounds === 1 ? "" : "s"} left` : "Repeat is fatal")}</span></button>`).join("")}${p.alive && !conditions.length ? '<span class="condition-clear">In good health</span>' : ""}</div></div>`;
 }
 function refreshPlayerSummaries(turnPlayer: number) {
   const summaries = app.querySelector(".players");
@@ -700,7 +759,7 @@ function journeyArtwork(): SceneArt {
 function wagonState() {
   const conditions = game.state.hazards.filter((h) => wagonKinds.has(h.kind));
   return conditions.length
-    ? `<div class="wagon-state" aria-label="Wagon condition"><div class="wagon-condition-list">${conditions.map((h) => `<button class="wagon-condition" data-ui-key="wagon-condition-${h.id}" data-wagon-preview data-hazard-id="${h.id}" aria-label="${titles[h.kind]}: wagon condition and remedies"><img src="${calamityArt[h.kind]}" alt=""><span>${titles[h.kind]}${h.rounds !== null ? `<small>${h.rounds} round${h.rounds === 1 ? "" : "s"} left</small>` : ""}</span></button>`).join("")}</div></div>`
+    ? `<div class="wagon-state" aria-label="Wagon condition"><p class="eyebrow">Wagon conditions</p><div class="wagon-condition-list">${conditions.map((h) => `<button class="wagon-condition" data-ui-key="wagon-condition-${h.id}" data-wagon-preview data-hazard-id="${h.id}" aria-label="${titles[h.kind]}: wagon condition and remedies"><img src="${calamityArt[h.kind]}" alt=""><span>${titles[h.kind]}<small>${h.rounds !== null ? `${h.rounds} round${h.rounds === 1 ? "" : "s"} left · journey at risk` : h.kind === "grass" ? "Next grass calamity: oxen die" : "Next bad water: oxen die"}</small></span></button>`).join("")}</div></div>`
     : "";
 }
 function remedyDescription(h: Hazard) {
@@ -728,27 +787,56 @@ function remedyDescription(h: Hazard) {
     : "";
   return `${name} needs ${needed}${deadline} to recover. You can give a needed supply on your turn instead of playing a trail card.${rest}${danger}`;
 }
-function hazards(
-  conditions: Hazard[],
-  showOwner = true,
-  showArtwork = true,
-  showDescription = true,
+function turnOption(
+  key: string,
+  title: string,
+  text: string,
+  controls: string,
+  image?: string,
+  urgent = false,
+  warning: ActionNotice[] = [],
+  subject = "",
 ) {
+  return `<article class="turn-option ${urgent ? "is-urgent" : ""}" data-ui-key="option-${key}"><div class="option-summary">${image ? `<img class="option-art" src="${image}" alt="">` : `<span class="option-symbol">${actionIcon(key)}</span>`}<div class="option-copy"><h3>${subject}${escape(title)}</h3>${text ? `<p>${escape(text)}</p>` : ""}${warning.length ? `<div class="option-notices" aria-label="Timing and consequences">${warning.map((notice) => `<span class="action-notice ${notice.danger ? "is-danger" : ""}">${actionIcon(notice.icon)}<span>${escape(notice.text)}</span></span>`).join("")}</div>` : ""}</div></div><div class="option-controls choices">${controls}</div></article>`;
+}
+function hazards(conditions: Hazard[]) {
   return conditions
-    .map(
-      (h) =>
-        `<article class="hazard ${wagonKinds.has(h.kind) ? "hazard-wagon" : "hazard-personal"} ${showArtwork ? "has-art" : ""}" data-ui-key="hazard-${h.id}">${showArtwork && calamityArt[h.kind] ? `<img class="hazard-art" src="${calamityArt[h.kind]}" alt="${titles[h.kind]}">` : ""}<strong class="condition-heading">${conditionPortrait(h.kind, h.owner)}<span>${escape(conditionTitle(h.kind, h.owner))}</span></strong>${showDescription ? `<p>${escape(remedyDescription(h))}</p>` : ""}<span><span class="hazard-timing">${h.rounds === null ? "" : `${h.rounds} round${h.rounds === 1 ? "" : "s"} left`}${h.skip ? `${h.rounds === null ? "" : " · "}rests ${h.skip} turn${h.skip === 1 ? "" : "s"}` : ""}</span></span><div class="choices">${(
-          Object.keys(h.needs) as Supply[]
-        )
-          .filter((k) => h.needs[k]! > 0)
+    .map((h) => {
+      const controls = (Object.keys(h.needs) as Supply[])
+        .filter((k) => h.needs[k]! > 0)
+        .map((k) => {
+          const reason =
+            game.state.phase !== "turn"
+              ? "After this encounter"
+              : game.skips
+                ? "Resting this turn"
+                : !game.player.supplies.includes(k)
+                  ? `No ${names[k].toLowerCase()} in your bag`
+                  : game.state.used >= (game.living.length === 2 ? 2 : 1)
+                    ? "Supply turn used"
+                    : "";
+          return `<div class="remedy-choice"><button style="--remedy-color:${supplyColor(k)}" data-cure="${h.id}" data-supply="${k}" ${reason ? "disabled" : ""}>${supplyEmblem(k)}<span>Give ${names[k]}<small>${h.needs[k]} still needed</small></span>${actionIcon("end")}</button>${reason ? `<small class="action-unavailable">${escape(reason)}</small>` : ""}</div>`;
+        })
+        .join("");
+      return turnOption(
+        `hazard-${h.id}`,
+        conditionTitle(h.kind, h.owner),
+        `Give ${Object.entries(h.needs)
+          .filter(([, count]) => count! > 0)
           .map(
-            (k) =>
-              `<button data-cure="${h.id}" data-supply="${k}" ${game.state.phase !== "turn" || game.skips || !game.player.supplies.includes(k) || game.state.used >= (game.living.length === 2 ? 2 : 1) ? "disabled" : ""}>Give ${supplyEmblem(k, h.needs[k]!, true)}<small>needed</small></button>`,
+            ([kind, count]) =>
+              `${count} ${names[kind as Supply].toLowerCase()}`,
           )
           .join(
-            "",
-          )}${!Object.keys(h.needs).length && h.kind !== "arm" ? "<small>Town can remove this card.</small>" : ""}</div></article>`,
-    )
+            " and ",
+          )} to ${wagonKinds.has(h.kind) ? "get the wagon moving safely again" : `help ${game.state.players[h.owner].name} recover`}. Uses your supply turn.${h.skip ? ` They must rest ${h.skip} more turn${h.skip === 1 ? "" : "s"} unless cured.` : ""}`,
+        controls,
+        calamityArt[h.kind],
+        true,
+        conditionWarning(h),
+        conditionPortrait(h.kind, h.owner),
+      );
+    })
     .join("");
 }
 let willPanel: HTMLElement | undefined;
@@ -897,94 +985,152 @@ function playerSupplies(index = game.state.current) {
 function decision() {
   const s = game.state,
     p = game.player;
-  let heading = "",
-    text = "",
-    choices = "";
+  let options = "";
   if (s.status !== "travel") {
-    heading =
-      s.status === "won" ? "Hello, Oregon." : "The prairie keeps your story.";
-    text = s.note;
-    choices = `${!p.alive ? memorial(s.current, false) : ""}${turnButton("new", "Another journey")}`;
-  } else if (s.phase === "river") {
-    heading = "River crossing";
-    text = "Cross the river before the wagon can follow more trail.";
-    choices = game.skips
-      ? turnButton("skip", "Rest this turn")
-      : turnButton("roll", "Roll to ford");
-    if (game.skips)
-      text += " This player must sit out; pass the attempt without rolling.";
-  } else if (s.phase === "repair") {
-    heading = titles[s.pending!];
-    text = "Attempt a repair to get the wagon moving again.";
-    choices = turnButton("repair", "Roll to repair");
+    options = turnOption(
+      "new",
+      s.status === "won" ? "Hello, Oregon." : "The prairie keeps your story.",
+      s.note,
+      turnButton("new", "Another journey"),
+      s.status === "won" ? art.landscape : art.legacy,
+    );
+  } else if (s.phase === "legacy") {
+    options = "";
   } else if (s.phase === "town" || s.phase === "fort") {
-    heading = game.top
-      ? escape(label(game.top))
-      : s.phase === "town"
-        ? "Town"
-        : "Fort";
-    text =
-      s.phase === "town"
-        ? "Take one supply from the shop OR remove one active calamity."
-        : "Take two available supplies from the shop.";
     const supplyChoices = (Object.keys(names) as Supply[])
       .map(
         (k) =>
-          `<button data-take="${k}" ${!s.shop[k] ? "disabled" : ""}>${supplyEmblem(k, s.shop[k], true)}</button>`,
+          `<button data-take="${k}" ${!s.shop[k] ? "disabled" : ""}>${supplyEmblem(k, s.shop[k], true)}<span>Take ${names[k]}</span></button>`,
       )
       .join("");
-    const remedies =
-      s.phase === "town"
-        ? s.hazards
-            .map(
-              (h) =>
-                `<button data-town="${h.id}">${actionIcon("remove")}<span>Remove ${titles[h.kind]}</span></button>`,
-            )
-            .join("")
-        : "";
-    choices = `<div class="settlement-options"><section class="settlement-supplies" aria-label="Available supplies"><h4>Supplies</h4><div class="choices">${supplyChoices}</div></section>${remedies ? `<section class="settlement-remedies" aria-label="Town remedies"><h4>Or remedy a calamity</h4><div class="choices">${remedies}</div></section>` : ""}<div class="settlement-departure">${turnButton(
+    options = turnOption(
+      "settlement-supplies",
+      game.top ? label(game.top) : "Restock supplies",
+      `Choose a supply to pack. ${s.take} pick${s.take === 1 ? "" : "s"} remaining.`,
+      supplyChoices,
+      art[s.phase],
+    );
+    if (s.phase === "town")
+      options += s.hazards
+        .map((h) =>
+          turnOption(
+            `town-${h.id}`,
+            wagonKinds.has(h.kind)
+              ? `Remedy ${titles[h.kind]}`
+              : `Treat ${s.players[h.owner].name}’s ${titles[h.kind].toLowerCase()}`,
+            "The town can remove this condition instead of providing a supply.",
+            `<button data-town="${h.id}">${actionIcon("end")}<span>Remedy ${titles[h.kind]}</span></button>`,
+            calamityArt[h.kind],
+            true,
+            conditionWarning(h),
+          ),
+        )
+        .join("");
+    options += turnOption(
       "leave",
-      s.phase === "fort" && s.take < 2
-        ? "Leave with what you have"
-        : "Leave without supplies",
-    )}</div></div>`;
-    text += ` ${s.take} pick${s.take === 1 ? "" : "s"} remaining.`;
-  } else if (s.phase === "legacy") {
-    heading = "";
-    text =
-      "Leave up to two supplies to your companions. The rest return to the shop.";
-    choices = "";
-  } else {
-    heading = "";
-    const canRemedy = s.hazards.some((h) =>
-      (Object.keys(h.needs) as Supply[]).some(
-        (k) => h.needs[k]! > 0 && p.supplies.includes(k),
+      "Carry on",
+      "Finish this stop and pass the turn.",
+      turnButton(
+        "leave",
+        s.phase === "fort" && s.take < 2
+          ? "Leave with what you have"
+          : "Leave without supplies",
       ),
     );
-    choices = game.skips
-      ? turnButton("skip", "Rest this turn")
-      : s.used
-        ? turnButton("end", "Finish supply turn")
-        : game.hasTrail
-          ? ""
-          : turnButton("draw", "Draw one card & end turn");
-    text = game.skips
-      ? "Rest this turn while your companions carry on."
-      : s.used
-        ? game.living.length === 2 && s.used < 2 && canRemedy
-          ? "Use one more supply to remedy a calamity, or finish your turn."
-          : "Finish your supply turn."
-        : game.blocked
-          ? canRemedy
-            ? "The wagon is stopped. Use a supply to remedy the problem, or draw and pass."
-            : "The wagon is stopped. Draw one card and pass."
-          : game.hasTrail
-            ? `Play a connecting trail card${canRemedy ? ", or use a supply to remedy a calamity" : ""}. Rotate a card if needed.`
-            : canRemedy
-              ? "No trail card connects. Use a supply to remedy a calamity, or draw one card and end your turn."
-              : "No trail card connects. Draw one card and end your turn.";
+  } else {
+    options = playerCalamities();
+    if (s.phase === "river") {
+      options += turnOption(
+        "roll",
+        "Cross the river",
+        "The wagon cannot continue until someone reaches the far bank. An even roll succeeds; an odd roll passes the attempt to the next traveller.",
+        game.skips
+          ? turnButton("skip", "Rest and pass the attempt")
+          : turnButton("roll", "Roll to ford"),
+        game.top?.deadly ? riverArt.raging : riverArt.moderate,
+        true,
+        [
+          { text: "Even roll: cross safely", icon: "roll" },
+          {
+            text: game.top?.deadly
+              ? "Roll 1: current traveller drowns"
+              : "Roll 1: one supply lost",
+            icon: "warning",
+            danger: true,
+          },
+          { text: "Roll 3 or 5: try next turn", icon: "clock" },
+        ],
+      );
+    } else if (s.phase === "repair") {
+      options += turnOption(
+        "repair",
+        `Repair ${titles[s.pending!].toLowerCase()}`,
+        "Try to get the wagon moving again. Roll 4–6 to repair it. On 1–3, the wagon needs a spare-part supply.",
+        turnButton("repair", "Roll to repair"),
+        calamityArt[s.pending!],
+        true,
+        [
+          { text: "Roll 4–6: repaired", icon: "roll" },
+          {
+            text: "Roll 1–3: spare parts needed",
+            icon: "warning",
+            danger: true,
+          },
+          { text: "Then 1 round to remedy", icon: "clock" },
+          {
+            text: "Unresolved: the journey ends",
+            icon: "warning",
+            danger: true,
+          },
+        ],
+      );
+    } else if (game.skips) {
+      const resting = s.hazards.filter(
+        (h) => h.owner === s.current && h.skip > 0,
+      );
+      options += turnOption(
+        "skip",
+        "Rest this turn",
+        resting
+          .map((h) =>
+            h.kind === "arm"
+              ? remedyDescription(h)
+              : `${titles[h.kind]} requires ${h.skip} more turn${h.skip === 1 ? "" : "s"} of rest.`,
+          )
+          .join(" "),
+        turnButton("skip", "Rest and end turn"),
+        resting[0] ? calamityArt[resting[0].kind] : undefined,
+      );
+    } else if (s.used) {
+      options += turnOption(
+        "end",
+        "Finish supplying remedies",
+        game.living.length === 2 && s.used < 2
+          ? "You may give one more needed supply above, or finish your turn."
+          : "Your remedy has been supplied. Pass to the next traveller.",
+        turnButton("end", "Finish supply turn"),
+      );
+    } else {
+      if (!game.blocked && p.hand.length)
+        options += turnOption(
+          "play",
+          "Play a trail card",
+          "Choose a connected card below. Rotate a card to line up its road.",
+          `<section class="hand" aria-label="Current player trail cards">${p.hand.map(handCard).join("")}</section>`,
+          art.trail,
+        );
+      if (!game.hasTrail)
+        options += turnOption(
+          "draw",
+          "Draw a trail card",
+          game.blocked
+            ? "The wagon is stopped. Draw a card for a later turn while the party works on repairs."
+            : "No card connects. Draw one for a later turn and pass to the next traveller.",
+          turnButton("draw", "Draw one card & end turn"),
+        );
+    }
   }
-  return `<section class="decision" aria-live="polite"><p class="eyebrow">${s.status === "travel" ? `Turn ${s.turn}` : "Journey’s end"}</p><div class="turn-header" data-turn-player="${s.phase === "legacy" ? s.deaths[0] : s.current}"><div class="decision-heading">${portraitImage(s.players[s.phase === "legacy" ? s.deaths[0] : s.current].portrait ?? 0, true)}<h2>${s.phase === "legacy" ? `Farewell, ${escape(s.players[s.deaths[0]].name)}.` : `${escape(p.name)}’s turn`}</h2></div>${s.status === "travel" && s.phase !== "legacy" ? playerSupplies() : ""}</div><div class="turn-state-window"><div class="turn-state" data-ui-key="turn-state" data-phase="${s.phase}"><div class="action-summary">${s.phase !== "legacy" && actionArtwork() ? `<img class="action-artwork" src="${actionArtwork()!.src}" alt="${escape(actionArtwork()!.alt)}">` : ""}<div class="action-copy" data-ui-key="action-copy">${heading ? `<h3>${heading}</h3>${s.phase === "river" ? riverFailureTag(!!game.top?.deadly) : ""}` : ""}<p><span class="decision-text">${escape(text)}</span></p></div></div><div class="choices">${choices}</div>${playerCalamities()}</div></div></section>`;
+  return `<section class="decision turn-decision" aria-live="polite"><p class="eyebrow">${s.status === "travel" ? `Current turn · ${s.turn}` : "Journey’s end"}</p><div class="turn-header" data-turn-player="${s.phase === "legacy" ? s.deaths[0] : s.current}"><div class="decision-heading">${portraitImage(s.players[s.phase === "legacy" ? s.deaths[0] : s.current].portrait ?? 0, true)}<h2>${s.phase === "legacy" ? `Farewell, ${escape(s.players[s.deaths[0]].name)}.` : `${escape(p.name)}’s turn`}</h2></div>${s.status === "travel" && s.phase !== "legacy" ? playerSupplies() : ""}</div><div class="turn-state-window"><div class="turn-state turn-options" data-ui-key="turn-state" data-phase="${s.phase}">${options}</div></div></section>`;
 }
 function reportFor(c: TrailCard) {
   return c.journeyStep ? game.state.trailReports?.[c.journeyStep] : undefined;
@@ -1946,7 +2092,7 @@ app.addEventListener("click", async (event) => {
 });
 function trading() {
   const s = game.state;
-  return `<section class="shop ${shopOpen ? "is-open" : ""}"><button data-action="shop" class="shop-toggle" aria-expanded="${shopOpen}" aria-controls="supply-shop-content"><img src="${art.shop}" alt=""><span><span class="eyebrow">Give 2 → Get 1</span><strong>Supply exchange</strong><small>Any two supplies for one you need · no turn used</small></span><span class="shop-chevron" aria-hidden="true">⌄</span></button><div id="supply-shop-content" class="shop-content" ${!shopOpen ? "hidden" : ""}><div class="exchange-columns"><section class="exchange-give"><div class="exchange-heading"><h3>Give 2</h3><span class="trade-give-count" role="status">0 / 2 selected</span></div><p>Pick any two supplies. One traveller can pay both, or two can share.</p><div class="exchange-bags">${game.living
+  return `<section class="shop passive-shop ${shopOpen ? "is-open" : ""}"><button data-action="shop" class="shop-toggle" aria-expanded="${shopOpen}" aria-controls="supply-shop-content"><img src="${art.shop}" alt=""><span><span class="eyebrow">Give 2 → Get 1</span><strong>Supply exchange</strong><small>Any two supplies for one you need · no turn used</small></span><span class="shop-chevron" aria-hidden="true">⌄</span></button><div id="supply-shop-content" class="shop-content" ${!shopOpen ? "hidden" : ""}><div class="exchange-columns"><section class="exchange-give"><div class="exchange-heading"><h3>Give 2</h3><span class="trade-give-count" role="status">0 / 2 selected</span></div><p>Pick any two supplies. One traveller can pay both, or two can share.</p><div class="exchange-bags">${game.living
     .map((i) => {
       const p = s.players[i];
       return `<div class="exchange-bag" data-ui-key="exchange-bag-${i}"><div class="exchange-owner">${portrait(i)}<strong>${escape(p.name)}</strong></div><div class="trade-picks">${p.supplies.map((kind, index) => `<label data-ui-key="payment-${i}-${index}"><input type="checkbox" name="payment" value="${i}:${index}" aria-label="Give ${names[kind]} from ${escape(p.name)}, card ${index + 1}">${supplyEmblem(kind)}</label>`).join("") || '<small class="exchange-empty">No supplies to give.</small>'}</div></div>`;
@@ -2039,7 +2185,7 @@ function render() {
       ? setupScreen()
       : `<section class="journey"><img class="banner ${scene.src === art.landscape ? "" : "is-event"} ${[art.river, riverArt.moderate, riverArt.raging].includes(scene.src) ? "is-river" : ""}" src="${scene.src}" alt="${escape(scene.alt)}"></section><section class="players" aria-label="Travellers">${s.players.map((_, i) => playerCard(i)).join("")}</section>${trail()}${decision()}${
           s.status === "travel"
-            ? `<section class="hand" aria-label="Current player trail cards">${game.player.hand.map(handCard).join("")}</section>${s.phase !== "legacy" && s.phase !== "discard" ? trading() : ""}`
+            ? `${s.phase !== "legacy" && s.phase !== "discard" ? trading() : ""}`
             : ""
         }`
   }
@@ -3246,14 +3392,11 @@ app.addEventListener("click", async (event) => {
       const updated = template.content.firstElementChild!;
       old.className = updated.className;
       reconcile(old, updated);
-      const choices = app.querySelector(".turn-state .choices");
+      const choices = app.querySelector(".turn-state");
       if (choices) {
         const prompt = document.createElement("template");
         prompt.innerHTML = decision();
-        reconcile(
-          choices,
-          prompt.content.querySelector(".turn-state .choices")!,
-        );
+        reconcile(choices, prompt.content.querySelector(".turn-state")!);
       }
       app
         .querySelector<HTMLButtonElement>(`[data-rotate="${index}"]`)
@@ -3330,13 +3473,7 @@ app.addEventListener("click", async (event) => {
       deadOxenResult,
     );
   }
-  const shouldScrollTrail =
-    d.play !== undefined ||
-    game.state.turn !== previousTurn ||
-    game.state.current !== previousPlayer ||
-    game.state.count !== beforeResult.count ||
-    JSON.stringify(game.state.trailReports ?? {}) !==
-      JSON.stringify(beforeResult.trailReports ?? {});
+  const shouldScrollTrail = d.play !== undefined;
   persist(action);
   if (!d.cure) refreshPlayerSummaries(previousPlayer);
   const pendingTile = playedCard
@@ -3346,6 +3483,25 @@ app.addEventListener("click", async (event) => {
       )
     : undefined;
   try {
+    const affectedCondition =
+      remedyHazard ??
+      (d.town
+        ? beforeResult.hazards.find((h) => h.id === Number(d.town))
+        : undefined);
+    const globalDestination =
+      playedCard || d.action === "roll"
+        ? app.querySelector(".trail-area")
+        : affectedCondition
+          ? wagonKinds.has(affectedCondition.kind)
+            ? app.querySelector(".wagon-state")
+            : app.querySelector(
+                `[data-ui-key="player-${affectedCondition.owner}"]`,
+              )
+          : d.action === "repair"
+            ? (app.querySelector(".wagon-state") ??
+              app.querySelector(".trail-area"))
+            : null;
+    await scrollUpToState(globalDestination);
     if (
       shouldScrollTrail &&
       (d.play === undefined || !pickupSource || reducedMotion.matches)
@@ -3484,7 +3640,7 @@ app.addEventListener("click", async (event) => {
       previousState !==
         `${game.state.phase}:${game.state.pending}:${game.state.status}:${game.state.used}`;
     const stateSelector = ".turn-state";
-    const turnSelector = ".decision, .hand";
+    const turnSelector = ".decision";
     if (turnChanged && !reducedMotion.matches) {
       const outgoing = Array.from(
         app.querySelectorAll<HTMLElement>(turnSelector),
