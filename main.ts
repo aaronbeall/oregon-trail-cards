@@ -25,6 +25,11 @@ import {
 import "./style.css";
 import { randomName, randomParty, portraitSlots } from "./Party";
 import { gsap } from "gsap";
+import {
+  chooseComputerMove,
+  chooseBequests,
+  type ComputerMove,
+} from "./Computer";
 import { reconcile } from "./Render";
 import { supplyEmblem, supplyColor, supplyCollectionEmblem } from "./Supplies";
 import { GameHistory, replayGame, type GameAction } from "./History";
@@ -155,7 +160,14 @@ try {
 } catch {
   storageAvailable = false;
 }
-let party = randomParty(3);
+type WagonTraveller = {
+  name: string;
+  portrait: number;
+  controller?: "human" | "computer";
+};
+let party: WagonTraveller[] = randomParty(3);
+let computerPaused = false;
+let computerSequenceOwner: number | undefined;
 let partyKeys = party.map(() => crypto.randomUUID());
 let renderedProgress = -1;
 let firstPlayer = 0;
@@ -172,6 +184,7 @@ let pendingNewJourney = false;
 function setBusy(b: boolean) {
   busy = b;
   app.setAttribute("aria-busy", String(b));
+  if (!b) computerSequenceOwner = undefined;
   if (!b && pendingNewJourney) {
     pendingNewJourney = false;
     queueMicrotask(() =>
@@ -758,9 +771,19 @@ function portrait(index: number, large = false) {
     return `<span class="portrait gravestone ${large ? "large" : ""}" aria-hidden="true"><img src="${art.tombstoneIcon}" alt=""></span>`;
   return portraitImage(game.state.players[index]?.portrait ?? index % 6, large);
 }
-function travellerCard(p: { name: string; portrait: number }, i: number) {
+const humanIcon =
+  '<circle cx="12" cy="7" r="3"/><path d="M5 21v-3a7 7 0 0 1 14 0v3"/>';
+const computerIcon =
+  '<rect x="4" y="7" width="16" height="13" rx="3"/><path d="M12 3v4M8 12h.1m7.8 0h.1M8 16h8"/>';
+function controllerPicker(p: WagonTraveller, index: number) {
+  return `<div class="controller-picker" role="group" aria-label="Who controls ${escape(p.name)}?"><span class="controller-picker-label" aria-live="polite">${p.controller === "computer" ? "Computer" : "Human"}</span>${(["human", "computer"] as const).map((controller) => `<button type="button" data-controller-player="${index}" data-controller-value="${controller}" aria-label="${controller === "human" ? "Human" : "Computer"} controls ${escape(p.name)}" title="${controller === "human" ? "Human — you choose their moves" : "Computer — plays automatically"}" aria-pressed="${(p.controller ?? "human") === controller}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${controller === "human" ? humanIcon : computerIcon}</svg></button>`).join("")}</div>`;
+}
+function computerControl() {
+  return `<button type="button" class="computer-control" data-computer-pause aria-pressed="${computerPaused}" title="${computerPaused ? "Resume" : "Pause"} computer play">${computerPaused ? "▶ Resume computer" : "Ⅱ Pause computer"}</button>`;
+}
+function travellerCard(p: WagonTraveller, i: number) {
   const choosing = portraitPicker === i;
-  return `<article class="traveller-card" data-ui-key="${partyKeys[i]}" data-traveller="${i}"><span class="eyebrow">Traveller ${i + 1}</span><button class="traveller-remove" data-remove-traveller="${i}" aria-label="Remove ${escape(p.name)} from the wagon" title="${party.length === 2 ? "At least two travellers are needed" : "Remove traveller"}" ${party.length === 2 ? "disabled" : ""}><span aria-hidden="true">×</span></button><div class="traveller-portrait"><div class="portrait-picker" id="portrait-picker-${i}" ${!choosing ? "hidden" : ""} role="group" aria-label="Portraits for traveller ${i + 1}">${portraitSlots.map((slot) => `<button data-portrait="${slot}" data-player="${i}" aria-label="Portrait ${slot + 1} for traveller ${i + 1}" aria-pressed="${p.portrait === slot}" class="${p.portrait === slot ? "selected" : ""}">${portraitImage(slot)}</button>`).join("")}</div><button class="${choosing ? "portrait-picker-close" : "portrait-choice"}" data-picker="${i}" aria-expanded="${choosing}" aria-controls="portrait-picker-${i}" aria-label="${choosing ? "Close portrait selection" : "Choose portrait"} for traveller ${i + 1}">${choosing ? "Done" : `${portraitImage(p.portrait, true)}<span>Choose portrait</span>`}</button></div><label class="traveller-name">Name<input class="player-name" data-player="${i}" value="${escape(p.name)}" maxlength="30" required autocomplete="off"></label><small class="traveller-birthday">Born ${calendarDate(portraitBirthdays[p.portrait])}</small></article>`;
+  return `<article class="traveller-card" data-ui-key="${partyKeys[i]}" data-traveller="${i}"><span class="eyebrow">Traveller ${i + 1}</span><button class="traveller-remove" data-remove-traveller="${i}" aria-label="Remove ${escape(p.name)} from the wagon" title="${party.length === 2 ? "At least two travellers are needed" : "Remove traveller"}" ${party.length === 2 ? "disabled" : ""}><span aria-hidden="true">×</span></button><div class="traveller-portrait"><div class="portrait-picker" id="portrait-picker-${i}" ${!choosing ? "hidden" : ""} role="group" aria-label="Portraits for traveller ${i + 1}">${portraitSlots.map((slot) => `<button data-portrait="${slot}" data-player="${i}" aria-label="Portrait ${slot + 1} for traveller ${i + 1}" aria-pressed="${p.portrait === slot}" class="${p.portrait === slot ? "selected" : ""}">${portraitImage(slot)}</button>`).join("")}</div><button class="${choosing ? "portrait-picker-close" : "portrait-choice"}" data-picker="${i}" aria-expanded="${choosing}" aria-controls="portrait-picker-${i}" aria-label="${choosing ? "Close portrait selection" : "Choose portrait"} for traveller ${i + 1}">${choosing ? "Done" : `${portraitImage(p.portrait, true)}<span>Choose portrait</span>`}</button></div><label class="traveller-name">Name<input class="player-name" data-player="${i}" value="${escape(p.name)}" maxlength="30" required autocomplete="off"></label><small class="traveller-birthday">Born ${calendarDate(portraitBirthdays[p.portrait])}</small>${controllerPicker(p, i)}</article>`;
 }
 function leaderPicker() {
   return `<div class="leader-choice field"><span id="leader-label">Who leads the way?</span><div class="leader-icons" role="group" aria-labelledby="leader-label">${party.map((p, i) => `<button data-leader="${i}" aria-label="Lead with ${escape(p.name)}" aria-pressed="${i === firstPlayer}" class="leader-icon ${i === firstPlayer ? "selected" : ""}">${portraitImage(p.portrait)}</button>`).join("")}</div><strong class="leader-name" aria-live="polite">${escape(party[firstPlayer].name)}</strong></div>`;
@@ -955,7 +978,7 @@ function playerCard(index: number, turnPlayer = game.state.current) {
   const conditions = s.hazards.filter(
     (h) => h.owner === index && !wagonKinds.has(h.kind),
   );
-  return `<div data-ui-key="player-${index}" data-player-preview="summary" data-player-index="${index}" tabindex="0" aria-label="${escape(p.name)}${index === turnPlayer ? ", current turn" : ""}: full player details" class="player ${index === turnPlayer ? "current" : ""} ${!p.alive ? "dead" : conditions.length ? `unwell severity-${playerSeverity(conditions)}` : ""}">${index === turnPlayer && p.alive ? '<span class="compact-active-badge" aria-hidden="true">Turn</span>' : ""}<div class="player-heading">${portrait(index)}<div><strong>${escape(p.name)} ${!p.alive ? "†" : index === turnPlayer ? '<span class="player-turn-tag">Turn</span>' : ""}</strong>${p.birthday ? `<small class="player-birthday">Born ${calendarDate(p.birthday)}</small>` : ""}</div></div>${p.alive ? `${playerInventory(index)}${compactPlayerInventory(index)}` : `<small class="player-epitaph">${escape(p.epitaph)}</small>`}<div class="player-state" aria-label="${escape(p.name)}’s condition">${(p.alive ? conditions : []).map((h) => `<button class="condition-status severity-${hazardSeverity(h)}" style="--condition-art:url('${calamityArt[h.kind]}')" data-ui-key="condition-${h.id}" data-player-preview="condition" data-player-index="${index}" data-hazard-id="${h.id}" aria-label="${escape(conditionTitle(h.kind, index))}: ${severityLabels[hazardSeverity(h)]}${conditionTiming(h) ? `, ${conditionTiming(h)}` : ""}: condition and remedies"><span>${titles[h.kind]}</span><span class="condition-severity">${severityLabels[hazardSeverity(h)]}</span>${conditionTiming(h) ? `<span class="healing-countdown">${conditionTiming(h)}</span>` : ""}${compactCondition(h)}</button>`).join("")}${p.alive && !conditions.length ? '<span class="condition-clear">In good health</span>' : ""}</div></div>`;
+  return `<div data-ui-key="player-${index}" data-player-preview="summary" data-player-index="${index}" tabindex="0" aria-label="${escape(p.name)}${index === turnPlayer ? ", current turn" : ""}: full player details" class="player ${index === turnPlayer ? "current" : ""} ${!p.alive ? "dead" : conditions.length ? `unwell severity-${playerSeverity(conditions)}` : ""}">${index === turnPlayer && p.alive ? '<span class="compact-active-badge" aria-hidden="true">Turn</span>' : ""}<div class="player-heading">${portrait(index)}<div><strong>${escape(p.name)} ${p.controller === "computer" ? `<svg class="computer-player-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" role="img" aria-label="Computer">${computerIcon}</svg>` : ""} ${!p.alive ? "†" : index === turnPlayer ? '<span class="player-turn-tag">Turn</span>' : ""}</strong>${p.birthday ? `<small class="player-birthday">Born ${calendarDate(p.birthday)}</small>` : ""}</div></div>${p.alive ? `${playerInventory(index)}${compactPlayerInventory(index)}` : `<small class="player-epitaph">${escape(p.epitaph)}</small>`}<div class="player-state" aria-label="${escape(p.name)}’s condition">${(p.alive ? conditions : []).map((h) => `<button class="condition-status severity-${hazardSeverity(h)}" style="--condition-art:url('${calamityArt[h.kind]}')" data-ui-key="condition-${h.id}" data-player-preview="condition" data-player-index="${index}" data-hazard-id="${h.id}" aria-label="${escape(conditionTitle(h.kind, index))}: ${severityLabels[hazardSeverity(h)]}${conditionTiming(h) ? `, ${conditionTiming(h)}` : ""}: condition and remedies"><span>${titles[h.kind]}</span><span class="condition-severity">${severityLabels[hazardSeverity(h)]}</span>${conditionTiming(h) ? `<span class="healing-countdown">${conditionTiming(h)}</span>` : ""}${compactCondition(h)}</button>`).join("")}${p.alive && !conditions.length ? '<span class="condition-clear">In good health</span>' : ""}</div></div>`;
 }
 function refreshPlayerSummaries(turnPlayer: number) {
   const summaries = app.querySelector(".players");
@@ -1439,7 +1462,7 @@ function decision() {
         );
     }
   }
-  return `<section class="decision turn-decision" aria-live="polite"><p class="eyebrow">${s.status === "travel" ? `Day ${s.turn}` : "Journey’s end"}</p><div class="turn-header" data-turn-player="${s.phase === "legacy" ? s.deaths[0] : s.current}"><div class="decision-heading">${portraitImage(s.players[s.phase === "legacy" ? s.deaths[0] : s.current].portrait ?? 0, true)}<h2>${s.phase === "legacy" ? `Farewell, ${escape(s.players[s.deaths[0]].name)}.` : `${escape(p.name)}’s turn`}</h2></div>${s.status === "travel" && s.phase !== "legacy" ? playerSupplies() : ""}</div><div class="turn-state-window"><div class="turn-state turn-options" data-ui-key="turn-state" data-phase="${s.phase}">${options}</div></div>${s.status === "travel" && s.phase !== "legacy" ? `<div class="turn-map-preview">${renderJourneyMapPreview(s)}</div>` : ""}</section>`;
+  return `<section class="decision turn-decision" aria-live="polite"><p class="eyebrow">${s.status === "travel" ? `Day ${s.turn}` : "Journey’s end"}</p><div class="turn-header" data-turn-player="${s.phase === "legacy" ? s.deaths[0] : s.current}"><div class="decision-heading">${portraitImage(s.players[s.phase === "legacy" ? s.deaths[0] : s.current].portrait ?? 0, true)}<h2>${s.phase === "legacy" ? `Farewell, ${escape(s.players[s.deaths[0]].name)}.` : `${escape(p.name)}’s turn`}</h2></div>${s.status === "travel" && s.phase !== "legacy" ? playerSupplies() : ""}</div>${s.status === "travel" && p.controller === "computer" ? `<div class="computer-turn-status"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">${computerIcon}</svg>Computer traveller</span>${computerControl()}</div>` : ""}<div class="turn-state-window"><div class="turn-state turn-options" data-ui-key="turn-state" data-phase="${s.phase}">${options}</div></div>${s.status === "travel" && s.phase !== "legacy" ? `<div class="turn-map-preview">${renderJourneyMapPreview(s)}</div>` : ""}</section>`;
 }
 function reportFor(c: TrailCard) {
   return c.journeyStep ? game.state.trailReports?.[c.journeyStep] : undefined;
@@ -2908,6 +2931,15 @@ function createInterstitial(label: string) {
   return {
     panel,
     async show() {
+      if (
+        computerSequenceOwner !== undefined ||
+        (game.state.phase === "legacy" &&
+          game.state.players[game.state.deaths[0]]?.controller === "computer")
+      )
+        panel.insertAdjacentHTML(
+          "afterbegin",
+          `<div class="interstitial-computer-control">${computerControl()}</div>`,
+        );
       if (reducedMotion.matches) gsap.set(shell, { opacity: 1 });
       else
         await playTimeline((tl) => {
@@ -3615,6 +3647,31 @@ app.addEventListener("click", async (event) => {
     }
     return;
   }
+  if (button.dataset.controllerPlayer !== undefined) {
+    if (!setup) return;
+    const index = Number(button.dataset.controllerPlayer);
+    const controller = button.dataset.controllerValue;
+    if (!party[index] || !["human", "computer"].includes(controller ?? ""))
+      return;
+    party[index].controller = controller as "human" | "computer";
+    const picker = button.closest(".controller-picker")!;
+    picker.querySelector(".controller-picker-label")!.textContent =
+      controller === "computer" ? "Computer" : "Human";
+    picker
+      .querySelectorAll<HTMLButtonElement>("button")
+      .forEach((choice) =>
+        choice.setAttribute(
+          "aria-pressed",
+          String(choice.dataset.controllerValue === controller),
+        ),
+      );
+    return;
+  }
+  if (
+    !setup &&
+    game.state.players[game.state.current].controller === "computer"
+  )
+    computerSequenceOwner = game.state.current;
   const previousState = `${game.state.phase}:${game.state.pending}:${game.state.status}:${game.state.used}`;
   const beforeResult = structuredClone(game.state);
   const previousTurn = game.state.turn;
@@ -3838,6 +3895,10 @@ app.addEventListener("click", async (event) => {
       party.map((p) => p.portrait),
     );
     if (changed) {
+      game.state.players.forEach(
+        (player, i) => (player.controller = party[i].controller ?? "human"),
+      );
+      computerPaused = false;
       game.state.startDate = startDate;
       setup = false;
     } else {
@@ -3856,7 +3917,10 @@ app.addEventListener("click", async (event) => {
     app.querySelector(".leader-name")!.textContent = party[firstPlayer].name;
     return;
   } else if (d.action === "randomize") {
-    party = randomParty(party.length, party);
+    party = randomParty(party.length, party).map((p, i) => ({
+      ...p,
+      controller: party[i].controller ?? "human",
+    }));
     portraitPicker = null;
     setBusy(true);
     try {
@@ -4374,6 +4438,211 @@ app.addEventListener("change", (event) => {
     avatar.replaceWith(template.content);
   }
 });
+document.addEventListener("click", (event) => {
+  const control = (event.target as Element).closest("[data-computer-pause]");
+  if (!control) return;
+  computerPaused = !computerPaused;
+  clearComputerCountdown();
+  document
+    .querySelectorAll<HTMLButtonElement>("[data-computer-pause]")
+    .forEach((button) => {
+      button.textContent = computerPaused
+        ? "▶ Resume computer"
+        : "Ⅱ Pause computer";
+      button.title = `${computerPaused ? "Resume" : "Pause"} computer play`;
+      button.setAttribute("aria-pressed", String(computerPaused));
+    });
+});
+function computerButton(move: ComputerMove): HTMLElement | null {
+  if (move.type === "trade") {
+    const select = app.querySelector<HTMLSelectElement>("#trade-kind");
+    if (!select) return null;
+    app
+      .querySelectorAll<HTMLInputElement>('input[name="payment"]')
+      .forEach(
+        (input) =>
+          (input.checked = move.payments.some(
+            (p) => input.value === `${p.player}:${p.index}`,
+          )),
+      );
+    select.value = move.supply;
+    app.querySelector<HTMLSelectElement>("#trade-recipient")!.value = String(
+      move.recipient,
+    );
+    updateExchange();
+    return app.querySelector('[data-action="trade"]');
+  }
+  const selector =
+    move.type === "play"
+      ? `[data-play="${move.index}"]`
+      : move.type === "rotate"
+        ? `[data-rotate="${move.index}"]`
+        : move.type === "cure"
+          ? `[data-cure="${move.hazard}"][data-supply="${move.supply}"]`
+          : move.type === "town"
+            ? `[data-town="${move.hazard}"]`
+            : move.type === "take"
+              ? `[data-take="${move.supply}"]`
+              : `[data-action="${move.type}"]`;
+  return app.querySelector(selector);
+}
+let humanTradeDeclined: { state: Journey; turn: number } | undefined;
+async function approveComputerTrade(
+  move: Extract<ComputerMove, { type: "trade" }>,
+) {
+  const state = game.state;
+  const snapshot = JSON.stringify(state);
+  const overlay = createInterstitial("Permission to use your supplies");
+  setBusy(true);
+  const humanPayments = move.payments.filter(
+    (payment) => state.players[payment.player].controller !== "computer",
+  );
+  const owners = [...new Set(humanPayments.map((payment) => payment.player))];
+  overlay.panel.innerHTML = `<div class="computer-trade-request"><p class="eyebrow">A favour for the wagon</p><h3>May ${escape(game.player.name)} use your supplies?</h3><p>${escape(move.reason)} This exchange gives ${escape(state.players[move.recipient].name)} ${names[move.supply].toLowerCase()}.</p><div class="computer-trade-payments">${move.payments.map((payment) => `<div>${portrait(payment.player)}<span><strong>${escape(state.players[payment.player].name)}</strong>${supplyEmblem(state.players[payment.player].supplies[payment.index])}${state.players[payment.player].controller !== "computer" ? "<small>Your permission needed</small>" : ""}</span></div>`).join("")}</div><div class="computer-trade-receive">Get ${supplyEmblem(move.supply)}</div><p>${owners.map((owner) => escape(state.players[owner].name)).join(" and ")}: approve this exchange, or keep your supplies.</p><div class="computer-trade-buttons"><button data-trade-permission="no">Keep my supplies</button><button data-trade-permission="yes">Allow this exchange →</button></div></div>`;
+  let approved = false;
+  try {
+    await overlay.show();
+    approved = await new Promise<boolean>((resolve) => {
+      overlay.panel
+        .querySelectorAll<HTMLButtonElement>("[data-trade-permission]")
+        .forEach((button) =>
+          button.addEventListener(
+            "click",
+            () => resolve(button.dataset.tradePermission === "yes"),
+            { once: true },
+          ),
+        );
+      overlay.panel
+        .querySelector<HTMLButtonElement>('[data-trade-permission="no"]')!
+        .focus({ preventScroll: true });
+    });
+  } finally {
+    await overlay.close();
+    setBusy(false);
+  }
+  if (game.state !== state || JSON.stringify(game.state) !== snapshot) return;
+  if (!approved) {
+    humanTradeDeclined = { state, turn: state.turn };
+    return;
+  }
+  // Consent is for this exact displayed trade, not later AI decisions.
+  computerButton(move)?.click();
+}
+let computerCountdownTarget: HTMLElement | undefined;
+let computerCountdown: HTMLElement | undefined;
+function clearComputerCountdown() {
+  computerCountdownTarget?.removeAttribute("data-computer-waiting");
+  computerCountdown?.remove();
+  computerCountdownTarget = undefined;
+  computerCountdown = undefined;
+}
+function showComputerCountdown(target: HTMLElement, duration: number) {
+  clearComputerCountdown();
+  computerCountdownTarget = target;
+  target.setAttribute("data-computer-waiting", "");
+  computerCountdown = document.createElement("span");
+  computerCountdown.className = "computer-countdown";
+  computerCountdown.setAttribute("aria-hidden", "true");
+  computerCountdown.style.setProperty(
+    "--computer-delay",
+    `${Math.ceil(duration / 200) * 200}ms`,
+  );
+  computerCountdown.innerHTML =
+    '<svg viewBox="0 0 20 20"><circle class="computer-countdown-track" cx="10" cy="10" r="7"/><circle class="computer-countdown-ring" cx="10" cy="10" r="7" pathLength="1"/></svg>';
+  target.append(computerCountdown);
+}
+// A single scheduler waits for a stable, ready control; it never queues stale moves.
+let computerReadyKey = "",
+  computerReadyAt = 0;
+function computerTick() {
+  if (
+    document.hidden ||
+    computerPaused ||
+    setup ||
+    confirming ||
+    showStatistics ||
+    showJourneys ||
+    active
+  ) {
+    computerReadyKey = "";
+    clearComputerCountdown();
+    return;
+  }
+  const dialog = document.querySelector<HTMLElement>(
+    ".result-interstitial .interstitial-panel",
+  );
+  let target: HTMLElement | null = null;
+  let move: ComputerMove | undefined;
+  const legacyComputer =
+    game.state.phase === "legacy" &&
+    game.state.players[game.state.deaths[0]]?.controller === "computer";
+  if (dialog) {
+    if (dialog.classList.contains("farewell-interstitial")) {
+      if (!legacyComputer) {
+        computerReadyKey = "";
+        clearComputerCountdown();
+        return;
+      }
+      target = dialog.querySelector('[data-action="will-supplies"]');
+    } else if (computerSequenceOwner !== undefined) {
+      target = dialog.querySelector(
+        '.revealed-card.is-face-down[role="button"], .result-continue:not(:disabled), .calamity-continue:not(:disabled), .dice-continue:not(:disabled)',
+      );
+    }
+  } else if (
+    !busy &&
+    game.state.players[game.state.current].controller === "computer"
+  ) {
+    move = chooseComputerMove(game, {
+      requestHumanSupplies: !(
+        humanTradeDeclined?.state === game.state &&
+        humanTradeDeclined.turn === game.state.turn
+      ),
+    });
+    if (move) target = computerButton(move);
+  }
+  if (!target || target.matches(":disabled") || !target.isConnected) {
+    computerReadyKey = "";
+    clearComputerCountdown();
+    return;
+  }
+  const key = `${game.state.turn}:${game.state.phase}:${game.state.used}:${game.state.count}:${JSON.stringify(move)}:${target.className}:${target.getAttribute("data-action")}`;
+  const delay = dialog ? 1700 : 1100;
+  if (
+    key !== computerReadyKey ||
+    computerCountdownTarget !== target ||
+    !computerCountdown?.isConnected
+  ) {
+    computerReadyKey = key;
+    computerReadyAt = performance.now();
+    showComputerCountdown(target, delay);
+    return;
+  }
+  if (performance.now() - computerReadyAt < delay) return;
+  computerReadyKey = "";
+  clearComputerCountdown();
+  if (legacyComputer && dialog?.classList.contains("farewell-interstitial")) {
+    willDraft.clear();
+    for (const gift of chooseBequests(game))
+      willDraft.set(gift.index, gift.recipient);
+  }
+  if (
+    move?.type === "trade" &&
+    move.payments.some(
+      (payment) => game.state.players[payment.player].controller !== "computer",
+    )
+  ) {
+    void approveComputerTrade(move);
+    return;
+  }
+  target.click();
+}
+const computerTimer = window.setInterval(computerTick, 200);
+if (import.meta.hot)
+  import.meta.hot.dispose(() => {
+    clearInterval(computerTimer);
+    clearComputerCountdown();
+  });
 restoreTimelineOwners();
 if (game.state.phase === "discard") {
   const before = structuredClone(game.state);

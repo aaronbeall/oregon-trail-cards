@@ -6881,7 +6881,9 @@ body.timeline-compact .trail-afflicted {
   gap: 4px;
   color: var(--ink);
   transform: rotate(-4deg);
-  font: italic 15px Georgia, serif;
+  font:
+    italic 15px Georgia,
+    serif;
 }
 .welcome-ticket > span,
 .welcome-ticket > small {
@@ -6957,4 +6959,178 @@ body.timeline-compact .trail-afflicted {
 .site-credit a:focus-visible {
   color: var(--ink);
   text-decoration-color: currentColor;
+}
+
+.controller-picker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  margin: 12px -12px -15px;
+  padding: 8px 12px;
+  border-top: 1px solid #bbb59d80;
+  background: #69745b08;
+}
+.controller-picker button {
+  padding: 5px 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  box-shadow: none;
+  color: var(--quiet);
+  opacity: 0.6;
+}
+.controller-picker button[aria-pressed="true"] {
+  background: #69745b12;
+  color: var(--ink);
+  border-color: #69745b44;
+  opacity: 1;
+}
+.controller-picker button:hover,
+.controller-picker button:focus-visible {
+  background: #69745b18;
+  opacity: 1;
+}
+.controller-picker svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+.computer-player-icon {
+  width: 14px;
+  height: 14px;
+  vertical-align: middle;
+  color: var(--quiet);
+}
+.computer-turn-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: -8px 0 22px;
+  color: var(--quiet);
+  font-size: 12px;
+}
+.computer-turn-status > span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.computer-turn-status svg {
+  width: 18px;
+  height: 18px;
+}
+.computer-control {
+  background: transparent;
+  color: var(--quiet);
+  border: 1px solid var(--line);
+  box-shadow: none;
+  padding: 5px 9px;
+  font-size: 11px;
+}
+.interstitial-computer-control {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 10px;
+}
+.computer-trade-request h3 {
+  font:
+    26px Georgia,
+    serif;
+  margin: 10px 0 16px;
+}
+.computer-trade-request > p {
+  color: var(--quiet);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.computer-trade-payments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin: 20px 0;
+}
+.computer-trade-payments > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  background: #69745b12;
+  border-radius: 5px;
+}
+.computer-trade-payments strong,
+.computer-trade-payments small {
+  display: block;
+  margin: 5px 0;
+}
+.computer-trade-payments small {
+  color: var(--quiet);
+  font-size: 11px;
+}
+.computer-trade-receive {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.computer-trade-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 22px;
+}
+.computer-trade-buttons [data-trade-permission="yes"] {
+  background: var(--sage);
+  color: var(--paper);
+}
+
+.controller-picker-label {
+  margin-right: 5px;
+  color: var(--quiet);
+  font-size: 10px;
+}
+
+[data-computer-waiting] {
+  position: relative;
+}
+.computer-countdown {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  z-index: 8;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--paper);
+  color: var(--sage);
+  box-shadow: 0 1px 3px #41483b30;
+  pointer-events: none;
+}
+.computer-countdown svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+}
+.computer-countdown-track {
+  opacity: 0.2;
+}
+.computer-countdown-ring {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  transform-origin: 10px 10px;
+  animation: computer-countdown var(--computer-delay) linear forwards;
+}
+@keyframes computer-countdown {
+  to {
+    stroke-dashoffset: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .computer-countdown-ring {
+    animation-timing-function: steps(5, end);
+  }
 }

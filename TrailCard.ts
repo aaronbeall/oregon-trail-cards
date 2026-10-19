@@ -148,6 +148,7 @@ export function calendarDate(date: string) {
   }).format(new Date(`${date}T12:00:00Z`));
 }
 export type Player = {
+  controller?: "human" | "computer";
   portrait?: number;
   name: string;
   alive: boolean;
@@ -1044,6 +1045,9 @@ export function readSave(raw: string | null): Journey | undefined {
     if (
       !s.players.every(
         (p: Player) =>
+          (p.controller === undefined ||
+            p.controller === "human" ||
+            p.controller === "computer") &&
           typeof p.name === "string" &&
           typeof p.alive === "boolean" &&
           Array.isArray(p.hand) &&
