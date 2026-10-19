@@ -7301,3 +7301,48 @@ body.timeline-compact .trail-afflicted {
     transition: none;
   }
 }
+.journey-mode-filters {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px;
+  margin: 0 0 22px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: #69745b08;
+}
+.journey-mode-filters button {
+  padding: 7px 13px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--quiet);
+  font-size: 12px;
+}
+.journey-mode-filters button[aria-pressed="true"] {
+  color: var(--paper);
+  background: var(--sage);
+  border-color: var(--sage);
+}
+.journey-mode-filters button:hover:not([aria-pressed="true"]) {
+  color: var(--ink);
+  background: #69745b14;
+}
+.journey-filter-empty {
+  padding: 35px 20px;
+  text-align: center;
+  color: var(--quiet);
+  border: 1px dashed var(--line);
+  border-radius: 5px;
+}
+.journey-filter-empty h3 {
+  font:
+    22px Georgia,
+    serif;
+  color: var(--ink);
+}
+.journey-filter-empty p {
+  font-size: 13px;
+  line-height: 1.6;
+}

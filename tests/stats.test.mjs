@@ -83,3 +83,38 @@ test("deaths counted once per traveller per game, including ongoing journeys", (
   ]);
   assert.equal(s.travellers, 2);
 });
+
+test("game type filters apply to every aggregate, not only the ledger", () => {
+  const played = journey("won", 50, [true, true]);
+  const simulated = journey(
+    "lost",
+    10,
+    [false, false],
+    ["Cholera", "Dysentery"],
+  );
+  simulated.record.id = "simulated";
+  simulated.record.simulated = true;
+  const records = [played, simulated];
+  assert.equal(gameStatistics(records).games.length, 2);
+  const human = gameStatistics(records, "played");
+  assert.equal(human.games.length, 1);
+  assert.equal(human.victoryRate, 1);
+  assert.equal(human.survivalRate, 1);
+  assert.equal(human.averageDistance, 50);
+  assert.equal(human.deaths.length, 0);
+  const sim = gameStatistics(records, "simulated");
+  assert.equal(sim.games.length, 1);
+  assert.equal(sim.victoryRate, 0);
+  assert.equal(sim.survivalRate, 0);
+  assert.equal(sim.averageDistance, 10);
+  assert.equal(
+    sim.deaths.reduce((n, d) => n + d.count, 0),
+    2,
+  );
+  delete simulated.record.simulated;
+  simulated.state.mode = "simulation";
+  assert.equal(gameStatistics(records, "simulated").games.length, 1);
+  const empty = gameStatistics([simulated], "played");
+  assert.equal(empty.games.length, 0);
+  assert.equal(empty.victoryRate, null);
+});

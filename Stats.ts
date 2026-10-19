@@ -1,6 +1,7 @@
 import type { Journey } from "./TrailCard";
 import type { RecordedGame } from "./History";
 
+export type JourneyModeFilter = "all" | "played" | "simulated";
 export type Outcome = "won" | "lost" | "abandoned" | "travel";
 export type JourneySummary = {
   simulated: boolean;
@@ -15,9 +16,16 @@ export type JourneySummary = {
 };
 export function gameStatistics(
   records: { record: RecordedGame; state: Journey }[],
+  mode: JourneyModeFilter = "all",
 ) {
   const games: JourneySummary[] = records
-    .filter(({ state }) => state.started)
+    .filter(
+      ({ record, state }) =>
+        state.started &&
+        (mode === "all" ||
+          (record.simulated === true || state.mode === "simulation") ===
+            (mode === "simulated")),
+    )
     .map(({ record, state }) => ({
       id: record.id,
       simulated: record.simulated === true || state.mode === "simulation",

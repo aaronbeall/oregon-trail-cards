@@ -34,7 +34,7 @@ import { reconcile } from "./Render";
 import { advanceSimulation } from "./Simulation";
 import { supplyEmblem, supplyColor, supplyCollectionEmblem } from "./Supplies";
 import { GameHistory, replayGame, type GameAction } from "./History";
-import { gameStatistics, type Outcome } from "./Stats";
+import { gameStatistics, type Outcome, type JourneyModeFilter } from "./Stats";
 import {
   journeyFlow,
   journeyMap,
@@ -151,6 +151,12 @@ let selectedJourneyMap: string | undefined;
 let mapReturnView: "stats" | "journey" = "stats";
 let statisticsFilter: Outcome | "all" = "all";
 let statisticsData: ReturnType<typeof gameStatistics> | undefined;
+const statisticsByMode = new Map<
+  JourneyModeFilter,
+  ReturnType<typeof gameStatistics>
+>();
+let journeysMode: JourneyModeFilter = "played";
+let statisticsMode: JourneyModeFilter = "all";
 let statisticsSkipped = 0;
 let journeyScroll = 0;
 let setup = !game.state.started,
@@ -2503,14 +2509,26 @@ function siteCredit() {
 function welcomeScreen() {
   return `<section class="decision welcome-screen" aria-labelledby="welcome-heading"><div class="welcome-art"><img src="${art.landscape}" alt="A covered wagon waiting beneath wide prairie skies"><span class="welcome-ticket"><span>Westward—to Oregon or bust</span><small>Probably die</small></span></div><div class="welcome-copy"><p class="eyebrow">Independence, Missouri · Spring 1847</p><h2 id="welcome-heading">This wagon won’t<br>pack itself.</h2><p>The road is long. The company is yours.<br>The oxen have made no promises.</p>${button("new", "Gather your travellers →")}<small>Play solo or local co-op · 2–6 travellers, one rather hopeful wagon</small></div></section>`;
 }
+function journeyModeFilter(
+  scope: "journeys" | "statistics",
+  selected: JourneyModeFilter,
+) {
+  if (!loadStatisticsData().games.some(game => game.simulated)) return "";
+  return `<div class="journey-mode-filters" role="group" aria-label="${scope === "journeys" ? "Saved journey" : "Statistics"} game types">${(["all", "played", "simulated"] as const).map((mode) => `<button type="button" data-journey-mode="${mode}" data-mode-scope="${scope}" aria-pressed="${selected === mode}">${mode === "all" ? "All" : mode === "played" ? "Played" : "Simulated"}</button>`).join("")}</div>`;
+}
 function journeysScreen() {
   if (!history?.archive.games.length)
     return `<header><div><p class="eyebrow">A cooperative westward wander · 2–6 players</p><h1>Oregon Trail <i>Cards</i></h1></div></header><main class="journey-browser">${welcomeScreen()}</main>`;
-  const data = loadStatisticsData();
+  const data = loadStatisticsData(journeysMode);
   const records = data.games
-    .map((record, index) => ({ ...record, number: index + 1 }))
+    .map((record) => ({
+      ...record,
+      number:
+        (history?.archive.games.findIndex((game) => game.id === record.id) ??
+          -1) + 1,
+    }))
     .reverse();
-  return `<header><div><p class="eyebrow">Pick up a thread of trail</p><h1>Your <i>journeys</i></h1></div><div class="header-actions">${button("stats-back", setup ? "← Back to wagon" : "← Back to journey")}${navigationIcons()}</div></header><main class="journey-browser"><div class="journey-browser-heading"><h2 id="journey-browser-heading" tabindex="-1">${records.length} saved journey${records.length === 1 ? "" : "s"}</h2><p>Open a journey to continue its current turn or revisit its final result.</p></div>${journeyOpenError ? `<p class="journey-open-error" role="alert">${escape(journeyOpenError)}</p>` : ""}${
+  return `<header><div><p class="eyebrow">Pick up a thread of trail</p><h1>Your <i>journeys</i></h1></div><div class="header-actions">${button("stats-back", setup ? "← Back to wagon" : "← Back to journey")}${navigationIcons()}</div></header><main class="journey-browser"><div class="journey-browser-heading"><h2 id="journey-browser-heading" tabindex="-1">${records.length} saved journey${records.length === 1 ? "" : "s"}</h2><p>Open a journey to continue its current turn or revisit its final result.</p></div>${journeyModeFilter("journeys", journeysMode)}${journeyOpenError ? `<p class="journey-open-error" role="alert">${escape(journeyOpenError)}</p>` : ""}${
     records.length
       ? `<div class="journey-list">${records
           .map((record) => {
@@ -2537,10 +2555,10 @@ function journeysScreen() {
             return `<article class="journey-list-row" data-ui-key="journey-choice-${escape(record.id)}"><img class="journey-list-art" src="${scene.src}" alt="${escape(scene.alt)}" loading="lazy" width="160" height="112"><div class="journey-list-copy"><div class="journey-list-title"><h3>Journey ${record.number}</h3>${record.simulated ? '<span class="journey-mode-tag">Simulated</span>' : ""}<span class="stats-outcome-tag stats-tag-${record.outcome}">${outcomeNames[record.outcome]}</span>${current ? '<span class="journey-current-tag">Current</span>' : ""}</div><div class="journey-list-metrics">${journeyProgressRing(record.distance, 50, "Cards")}${journeyProgressRing(record.survivors, record.players.length, "Alive")}<span class="journey-list-date">${date}<small>${record.days} day${record.days === 1 ? "" : "s"} on the trail</small></span></div><div class="journey-list-party">${record.players.map((player, index) => `<span>${player.alive ? portraitImage(player.portrait ?? index % 6) : `<img class="stats-grave" src="${art.tombstoneIcon}" alt="">`}<span>${escape(player.name)}</span></span>`).join("")}</div></div><div class="journey-list-open">${turnName ? `<small>${escape(turnName)}’s turn</small>` : ""}<button data-open-journey="${escape(record.id)}" aria-label="Open Journey ${record.number}">${record.outcome === "won" || record.outcome === "lost" ? "View result" : "Open journey"} →</button></div></article>`;
           })
           .join("")}</div>`
-      : welcomeScreen()
+      : `<section class="journey-filter-empty"><h3>No ${journeysMode === "all" ? "saved" : journeysMode} journeys yet.</h3><p>${journeysMode === "played" ? "Choose All or Simulated to see your computer expeditions." : "Try another filter to see the rest of your journeys."}</p></section>`
   }</main>`;
 }
-function loadStatisticsData() {
+function loadStatisticsData(mode: JourneyModeFilter = "all") {
   if (!statisticsData) {
     statisticsSkipped = 0;
     const records = (history?.archive.games ?? []).flatMap((record) => {
@@ -2551,9 +2569,12 @@ function loadStatisticsData() {
         return [];
       }
     });
-    statisticsData = gameStatistics(records);
+    statisticsByMode.clear();
+    for (const mode of ["all", "played", "simulated"] as const)
+      statisticsByMode.set(mode, gameStatistics(records, mode));
+    statisticsData = statisticsByMode.get("all")!;
   }
-  return statisticsData;
+  return statisticsByMode.get(mode)!;
 }
 function renderJourneyMap(
   state: Journey,
@@ -2621,14 +2642,19 @@ app.addEventListener("click", async (event) => {
   }
 });
 function statisticsScreen() {
-  const data = loadStatisticsData();
+  const data = loadStatisticsData(statisticsMode);
   const total = data.games.length;
   const percent = (rate: number | null) =>
     rate === null ? "—" : `${Math.round(rate * 100)}%`;
   const labels = Object.keys(outcomeNames) as Outcome[];
   const circumference = 2 * Math.PI * 48;
   const visible = data.games
-    .map((record, index) => ({ ...record, number: index + 1 }))
+    .map((record) => ({
+      ...record,
+      number:
+        (history?.archive.games.findIndex((game) => game.id === record.id) ??
+          -1) + 1,
+    }))
     .filter(
       (record) =>
         statisticsFilter === "all" || record.outcome === statisticsFilter,
@@ -2646,10 +2672,10 @@ function statisticsScreen() {
         })
       : "Date unavailable";
   };
-  return `<header><div><p class="eyebrow">The wagon’s ledger</p><h1>Journey <i>statistics</i></h1></div><div class="header-actions">${button("stats-back", setup ? "← Back to wagon" : "← Back to journey")}${navigationIcons()}</div></header><main class="stats-screen"><div class="stats-intro"><h2 id="stats-heading" tabindex="-1">Every road leaves a story.</h2><p>All journeys saved on this device.${statisticsSkipped ? ` ${statisticsSkipped} unreadable record${statisticsSkipped === 1 ? " is" : "s are"} excluded.` : ""}</p></div>${
+  return `<header><div><p class="eyebrow">The wagon’s ledger</p><h1>Journey <i>statistics</i></h1></div><div class="header-actions">${button("stats-back", setup ? "← Back to wagon" : "← Back to journey")}${navigationIcons()}</div></header><main class="stats-screen"><div class="stats-intro"><h2 id="stats-heading" tabindex="-1">Every road leaves a story.</h2><p>${statisticsMode === "all" ? "All" : statisticsMode === "played" ? "Played" : "Simulated"} journeys saved on this device.${statisticsSkipped ? ` ${statisticsSkipped} unreadable record${statisticsSkipped === 1 ? " is" : "s are"} excluded.` : ""}</p></div>${journeyModeFilter("statistics", statisticsMode)}${
     !total
-      ? `<section class="stats-empty"><img src="${art.progressWagon}" alt=""><h3>A blank page, for now.</h3><p>Start a journey and its story will appear here—even before you reach the end.</p>${button("stats-back", "Back to the wagon →")}</section>`
-      : `${journeyFlow(data.games, statisticsFilter)}<section class="stats-metrics" aria-label="Completed journey averages"><div><strong>${percent(data.survivalRate)}</strong><span>Traveller survival</span><small>${data.survivors} of ${data.travellers} travellers in completed games</small></div><div><strong>${data.averageDistance === null ? "—" : Math.round(data.averageDistance)}</strong><span>Average trail cards</span><small>Out of 50 · completed games</small></div><div><strong>${data.averageDays === null ? "—" : Math.round(data.averageDays)}</strong><span>Average days on the trail</span><small>Completed games</small></div></section><div class="stats-charts"><section class="stats-panel"><div class="stats-panel-heading"><h3>How far the wagon gets</h3></div><p class="stats-chart-note">Trail cards reached · all saved games</p><div class="stats-distance-chart" role="img" aria-label="${data.distances.map((bin) => `${bin.label}: ${bin.count} games`).join(", ")}">${data.distances.map((bin, index) => `<div><strong>${bin.count}</strong><div class="stats-bin-track"><span class="${index === 5 ? "stats-tone-won" : "stats-tone-travel"}" style="height:${(bin.count / maxDistance) * 100}%"></span></div><small>${bin.label}</small></div>`).join("")}</div></section><section class="stats-panel"><div class="stats-panel-heading"><h3>What the trail takes</h3></div><p class="stats-chart-note">Traveller deaths · all saved games</p>${
+      ? `<section class="stats-empty"><img src="${art.progressWagon}" alt=""><h3>${statisticsMode === "all" ? "A blank page, for now." : `No ${statisticsMode} journeys yet.`}</h3><p>${statisticsMode === "all" ? "Start a journey and its story will appear here—even before you reach the end." : "Choose another filter to explore the journeys saved here."}</p>${button("stats-back", "Back to the wagon →")}</section>`
+      : `${journeyFlow(data.games, statisticsFilter)}<section class="stats-metrics" aria-label="Completed journey averages"><div><strong>${percent(data.survivalRate)}</strong><span>Traveller survival</span><small>${data.survivors} of ${data.travellers} travellers in completed games</small></div><div><strong>${data.averageDistance === null ? "—" : Math.round(data.averageDistance)}</strong><span>Average trail cards</span><small>Out of 50 · completed games</small></div><div><strong>${data.averageDays === null ? "—" : Math.round(data.averageDays)}</strong><span>Average days on the trail</span><small>Completed games</small></div></section><div class="stats-charts"><section class="stats-panel"><div class="stats-panel-heading"><h3>How far the wagon gets</h3></div><p class="stats-chart-note">Trail cards reached · ${statisticsMode === "all" ? "all saved games" : `${statisticsMode} games`}</p><div class="stats-distance-chart" role="img" aria-label="${data.distances.map((bin) => `${bin.label}: ${bin.count} games`).join(", ")}">${data.distances.map((bin, index) => `<div><strong>${bin.count}</strong><div class="stats-bin-track"><span class="${index === 5 ? "stats-tone-won" : "stats-tone-travel"}" style="height:${(bin.count / maxDistance) * 100}%"></span></div><small>${bin.label}</small></div>`).join("")}</div></section><section class="stats-panel"><div class="stats-panel-heading"><h3>What the trail takes</h3></div><p class="stats-chart-note">Traveller deaths · ${statisticsMode === "all" ? "all saved games" : `${statisticsMode} games`}</p>${
           data.deaths.length
             ? `<div class="stats-death-chart">${data.deaths
                 .map(({ cause, count }) => {
@@ -2672,7 +2698,7 @@ function statisticsScreen() {
 }
 app.addEventListener("click", async (event) => {
   const target = (event.target as Element).closest<HTMLButtonElement>(
-    '[data-action="stats"], [data-action="stats-back"], [data-action="journeys"], [data-stats-filter], [data-open-journey], [data-action="new"]',
+    '[data-action="stats"], [data-action="stats-back"], [data-action="journeys"], [data-stats-filter], [data-journey-mode], [data-open-journey], [data-action="new"]',
   );
   if (!target || target.disabled) return;
   if (busy) {
@@ -2684,7 +2710,8 @@ app.addEventListener("click", async (event) => {
   }
   event.stopImmediatePropagation();
   const creating = target.dataset.action === "new";
-  const filtering = target.dataset.statsFilter !== undefined;
+  const modeFiltering = target.dataset.journeyMode !== undefined;
+  const filtering = target.dataset.statsFilter !== undefined || modeFiltering;
   const opening = target.dataset.openJourney;
   setBusy(true);
   try {
@@ -2728,6 +2755,11 @@ app.addEventListener("click", async (event) => {
         render();
         return;
       }
+    } else if (modeFiltering) {
+      const mode = target.dataset.journeyMode as JourneyModeFilter;
+      if (!["all", "played", "simulated"].includes(mode)) return;
+      if (target.dataset.modeScope === "journeys") journeysMode = mode;
+      else statisticsMode = mode;
     } else if (filtering)
       statisticsFilter = target.dataset.statsFilter as Outcome | "all";
     else if (
@@ -2767,7 +2799,9 @@ app.addEventListener("click", async (event) => {
         tl.fromTo(
           app.querySelector(
             filtering
-              ? ".stats-records"
+              ? showJourneys
+                ? ".journey-list, .journey-filter-empty"
+                : ".stats-records, .stats-empty"
               : showStatistics
                 ? ".stats-screen"
                 : showJourneys
@@ -2794,7 +2828,13 @@ app.addEventListener("click", async (event) => {
         : showJourneys
           ? "#journey-browser-heading"
           : '[data-action="journeys"]';
-    if (filtering)
+    if (modeFiltering)
+      app
+        .querySelector<HTMLButtonElement>(
+          `[data-mode-scope="${showJourneys ? "journeys" : "statistics"}"][data-journey-mode="${showJourneys ? journeysMode : statisticsMode}"]`,
+        )
+        ?.focus({ preventScroll: true });
+    else if (filtering)
       app
         .querySelector<HTMLButtonElement>(
           `[data-stats-filter="${statisticsFilter}"]`,
