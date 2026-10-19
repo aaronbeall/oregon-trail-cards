@@ -32,6 +32,7 @@ import {
 } from "./Computer";
 import { reconcile } from "./Render";
 import { advanceSimulation } from "./Simulation";
+import type { FlowMode } from "./Flows";
 import { supplyEmblem, supplyColor, supplyCollectionEmblem } from "./Supplies";
 import { GameHistory, replayGame, type GameAction } from "./History";
 import {
@@ -162,6 +163,9 @@ let showStatistics = false;
 let selectedJourneyMap: string | undefined;
 let mapReturnView: "stats" | "journey" = "stats";
 let statisticsFilter: Outcome | "all" = "all";
+let ledgerPage = 0;
+const ledgerPageSize = 12;
+let flowMode: FlowMode = "journeys";
 let statisticsData: ReturnType<typeof gameStatistics> | undefined;
 const statisticsByMode = new Map<
   JourneyModeFilter,
@@ -2732,6 +2736,7 @@ function startBatch() {
   };
   statisticsSource = "batch";
   statisticsFilter = "all";
+  ledgerPage = 0;
   try {
     const worker = new Worker(new URL("./BatchWorker.ts", import.meta.url), {
       type: "module",
@@ -2816,15 +2821,45 @@ app.addEventListener("click", (event) => {
     batchError = "";
     statisticsSource = "saved";
     statisticsFilter = "all";
+    ledgerPage = 0;
     refreshBatchView();
   } else {
     statisticsSource =
       target.dataset.statisticsSource === "batch" ? "batch" : "saved";
     statisticsFilter = "all";
+    ledgerPage = 0;
     refreshBatchView();
   }
 });
 if (import.meta.hot) import.meta.hot.dispose(() => batchWorker?.terminate());
+app.addEventListener("click", async (event) => {
+  const button = (event.target as Element).closest<HTMLButtonElement>(
+    "[data-flow-mode]",
+  );
+  if (!button || busy) return;
+  event.stopImmediatePropagation();
+  const mode = button.dataset.flowMode as FlowMode;
+  if (!["journeys", "players", "days"].includes(mode) || mode === flowMode)
+    return;
+  flowMode = mode;
+  setBusy(true);
+  try {
+    render();
+    if (!reducedMotion.matches)
+      await playTimeline((tl) =>
+        tl.fromTo(
+          app.querySelector(".flow-scroll"),
+          { opacity: 0, y: 4 },
+          { opacity: 1, y: 0, duration: 0.25, clearProps: "opacity,transform" },
+        ),
+      );
+    app
+      .querySelector<HTMLButtonElement>(`[data-flow-mode="${mode}"]`)
+      ?.focus({ preventScroll: true });
+  } finally {
+    setBusy(false);
+  }
+});
 function statisticsScreen() {
   const temporary = statisticsSource === "batch";
   const data = temporary
@@ -2848,7 +2883,14 @@ function statisticsScreen() {
         statisticsFilter === "all" || record.outcome === statisticsFilter,
     )
     .reverse();
-  const displayed = temporary ? visible.slice(0, 100) : visible;
+  const ledgerPages = Math.max(1, Math.ceil(visible.length / ledgerPageSize));
+  ledgerPage = Math.min(ledgerPage, ledgerPages - 1);
+  const ledgerStart = ledgerPage * ledgerPageSize;
+  const displayed = visible.slice(ledgerStart, ledgerStart + ledgerPageSize);
+  const pagination =
+    ledgerPages > 1
+      ? `<nav class="ledger-pagination" aria-label="Ledger pages"><button type="button" data-ledger-page="${ledgerPage - 1}" ${ledgerPage === 0 ? "disabled" : ""}>← Previous</button><span aria-live="polite">Page ${ledgerPage + 1} of ${ledgerPages.toLocaleString()}</span><button type="button" data-ledger-page="${ledgerPage + 1}" ${ledgerPage === ledgerPages - 1 ? "disabled" : ""}>Next →</button></nav>`
+      : "";
   const maxDistance = Math.max(1, ...data.distances.map((bin) => bin.count));
   const maxDeaths = Math.max(1, ...data.deaths.map((cause) => cause.count));
   const date = (iso: string) => {
@@ -2866,7 +2908,7 @@ function statisticsScreen() {
       ? `<section class="batch-waiting"><p>${batchRunning ? "The clankers are gathering evidence…" : "No completed runs in this dataset. Start a batch above."}</p></section>`
       : !total
         ? `<section class="stats-empty"><img src="${art.progressWagon}" alt=""><h3>${statisticsMode === "all" ? "A blank page, for now." : `No ${statisticsMode} journeys yet.`}</h3><p>${statisticsMode === "all" ? "Start a journey and its story will appear here—even before you reach the end." : "Choose another filter to explore the journeys saved here."}</p>${button("stats-back", "Back to the wagon →")}</section>`
-        : `${temporary ? batchPlayerComparison() : ""}${journeyFlow(data.games, statisticsFilter)}<section class="stats-metrics" aria-label="Completed journey averages"><div><strong>${percent(data.survivalRate)}</strong><span>Traveller survival</span><small>${data.survivors} of ${data.travellers} travellers in completed games</small></div><div><strong>${data.averageDistance === null ? "—" : Math.round(data.averageDistance)}</strong><span>Average trail cards</span><small>Out of 50 · completed games</small></div><div><strong>${data.averageDays === null ? "—" : Math.round(data.averageDays)}</strong><span>Average days on the trail</span><small>Completed games</small></div></section><div class="stats-charts"><section class="stats-panel"><div class="stats-panel-heading"><h3>How far the wagon gets</h3></div><p class="stats-chart-note">Trail cards reached · ${temporary ? "temporary batch" : statisticsMode === "all" ? "all saved games" : `${statisticsMode} games`}</p><div class="stats-distance-chart" role="img" aria-label="${data.distances.map((bin) => `${bin.label}: ${bin.count} games`).join(", ")}">${data.distances.map((bin, index) => `<div><strong>${bin.count}</strong><div class="stats-bin-track"><span class="${index === 5 ? "stats-tone-won" : "stats-tone-travel"}" style="height:${(bin.count / maxDistance) * 100}%"></span></div><small>${bin.label}</small></div>`).join("")}</div></section><section class="stats-panel"><div class="stats-panel-heading"><h3>What the trail takes</h3></div><p class="stats-chart-note">Traveller deaths · ${temporary ? "temporary batch" : statisticsMode === "all" ? "all saved games" : `${statisticsMode} games`}</p>${
+        : `${temporary ? batchPlayerComparison() : ""}${journeyFlow(data.games, statisticsFilter, flowMode)}<section class="stats-metrics" aria-label="Completed journey averages"><div><strong>${percent(data.survivalRate)}</strong><span>Traveller survival</span><small>${data.survivors} of ${data.travellers} travellers in completed games</small></div><div><strong>${data.averageDistance === null ? "—" : Math.round(data.averageDistance)}</strong><span>Average trail cards</span><small>Out of 50 · completed games</small></div><div><strong>${data.averageDays === null ? "—" : Math.round(data.averageDays)}</strong><span>Average days on the trail</span><small>Completed games</small></div></section><div class="stats-charts"><section class="stats-panel"><div class="stats-panel-heading"><h3>How far the wagon gets</h3></div><p class="stats-chart-note">Trail cards reached · ${temporary ? "temporary batch" : statisticsMode === "all" ? "all saved games" : `${statisticsMode} games`}</p><div class="stats-distance-chart" role="img" aria-label="${data.distances.map((bin) => `${bin.label}: ${bin.count} games`).join(", ")}">${data.distances.map((bin, index) => `<div><strong>${bin.count}</strong><div class="stats-bin-track"><span class="${index === 5 ? "stats-tone-won" : "stats-tone-travel"}" style="height:${(bin.count / maxDistance) * 100}%"></span></div><small>${bin.label}</small></div>`).join("")}</div></section><section class="stats-panel"><div class="stats-panel-heading"><h3>What the trail takes</h3></div><p class="stats-chart-note">Traveller deaths · ${temporary ? "temporary batch" : statisticsMode === "all" ? "all saved games" : `${statisticsMode} games`}</p>${
             data.deaths.length
               ? `<div class="stats-death-chart">${data.deaths
                   .map(({ cause, count }) => {
@@ -2884,9 +2926,26 @@ function statisticsScreen() {
               : '<div class="stats-no-deaths"><img src="' +
                 art.progressWagon +
                 '" alt=""><p>No travellers lost so far.</p></div>'
-          }</section></div><section class="stats-history"><div class="stats-panel-heading"><h3>${temporary ? "Batch runs" : "The journey ledger"}</h3>${temporary && visible.length > displayed.length ? `<span>Showing ${displayed.length} of ${visible.length.toLocaleString()} matching runs</span>` : ""}</div><div class="stats-filters" role="group" aria-label="${temporary ? "Filter batch outcomes" : "Filter saved journeys"}">${(["all", ...labels] as const).map((outcome) => `<button data-stats-filter="${outcome}" aria-pressed="${statisticsFilter === outcome}">${outcome === "all" ? (temporary ? "All runs" : "All journeys") : outcomeNames[outcome]} <span>${outcome === "all" ? total : data.outcomes[outcome]}</span></button>`).join("")}</div><div class="stats-records">${displayed.length ? displayed.map((record) => `<article class="stats-record" data-ui-key="stats-record-${escape(record.id)}"><div class="stats-record-title"><h4>${temporary ? "Run" : "Journey"} ${record.number}</h4>${record.simulated ? '<span class="journey-mode-tag">Simulated</span>' : ""}<span class="stats-outcome-tag stats-tag-${record.outcome}">${outcomeNames[record.outcome]}</span></div><div class="stats-record-date">${date(record.startedAt)}${record.partial ? " · Partial turn history" : ""}</div><div class="stats-record-progress"><span style="width:${record.distance * 2}%" class="stats-tone-${record.outcome}"></span></div><div class="stats-record-totals"><span>${record.distance} / 50 cards</span><span>${record.days} day${record.days === 1 ? "" : "s"}</span><span>${record.survivors} / ${record.players.length} alive</span></div><div class="stats-record-party">${record.players.map((player, index) => `<span title="${escape(player.name)}${!player.alive ? ` — ${escape(player.deathCause ?? "Died on the trail")}` : ""}" aria-label="${escape(player.name)}${!player.alive ? ", deceased" : ""}">${player.alive ? portraitImage(player.portrait ?? index % 6) : `<img class="stats-grave" src="${art.tombstoneIcon}" alt="">`}</span>`).join("")}</div>${temporary ? "" : `<button class="stats-map-button" data-view-journey="${escape(record.id)}">View trail map →</button>`}</article>`).join("") : '<p class="stats-no-records">No journeys in this group yet.</p>'}</div></section>`
+          }</section></div><section class="stats-history" id="stats-ledger" tabindex="-1"><div class="stats-panel-heading"><h3>${temporary ? "Batch runs" : "The journey ledger"}</h3>${visible.length ? `<span>${(ledgerStart + 1).toLocaleString()}–${(ledgerStart + displayed.length).toLocaleString()} of ${visible.length.toLocaleString()}</span>` : ""}</div><div class="stats-filters" role="group" aria-label="${temporary ? "Filter batch outcomes" : "Filter saved journeys"}">${(["all", ...labels] as const).map((outcome) => `<button data-stats-filter="${outcome}" aria-pressed="${statisticsFilter === outcome}">${outcome === "all" ? (temporary ? "All runs" : "All journeys") : outcomeNames[outcome]} <span>${outcome === "all" ? total : data.outcomes[outcome]}</span></button>`).join("")}</div><div class="stats-records">${displayed.length ? displayed.map((record) => `<article class="stats-record" data-ui-key="stats-record-${escape(record.id)}"><div class="stats-record-title"><h4>${temporary ? "Run" : "Journey"} ${record.number}</h4>${record.simulated ? '<span class="journey-mode-tag">Simulated</span>' : ""}<span class="stats-outcome-tag stats-tag-${record.outcome}">${outcomeNames[record.outcome]}</span></div><div class="stats-record-date">${date(record.startedAt)}${record.partial ? " · Partial turn history" : ""}</div><div class="stats-record-progress"><span style="width:${record.distance * 2}%" class="stats-tone-${record.outcome}"></span></div><div class="stats-record-totals"><span>${record.distance} / 50 cards</span><span>${record.days} day${record.days === 1 ? "" : "s"}</span><span>${record.survivors} / ${record.players.length} alive</span></div><div class="stats-record-party">${record.players.map((player, index) => `<span title="${escape(player.name)}${!player.alive ? ` — ${escape(player.deathCause ?? "Died on the trail")}` : ""}" aria-label="${escape(player.name)}${!player.alive ? ", deceased" : ""}">${player.alive ? portraitImage(player.portrait ?? index % 6) : `<img class="stats-grave" src="${art.tombstoneIcon}" alt="">`}</span>`).join("")}</div>${temporary ? "" : `<button class="stats-map-button" data-view-journey="${escape(record.id)}">View trail map →</button>`}</article>`).join("") : '<p class="stats-no-records">No journeys in this group yet.</p>'}</div>${pagination}</section>`
   }</main>`;
 }
+app.addEventListener("click", (event) => {
+  const target = (event.target as Element).closest<HTMLButtonElement>(
+    "[data-ledger-page]",
+  );
+  if (!target || target.disabled || busy || !showStatistics) return;
+  const page = Number(target.dataset.ledgerPage);
+  if (!Number.isInteger(page) || page < 0) return;
+  event.stopImmediatePropagation();
+  ledgerPage = page;
+  render();
+  const ledger = app.querySelector<HTMLElement>("#stats-ledger");
+  ledger?.focus({ preventScroll: true });
+  ledger?.scrollIntoView({
+    behavior: reducedMotion.matches ? "instant" : "smooth",
+    block: "start",
+  });
+});
 app.addEventListener("click", async (event) => {
   const target = (event.target as Element).closest<HTMLButtonElement>(
     '[data-action="stats"], [data-action="stats-back"], [data-action="journeys"], [data-stats-filter], [data-journey-mode], [data-open-journey], [data-action="new"]',
@@ -2951,15 +3010,18 @@ app.addEventListener("click", async (event) => {
       if (!["all", "played", "simulated"].includes(mode)) return;
       if (target.dataset.modeScope === "journeys") journeysMode = mode;
       else statisticsMode = mode;
-    } else if (filtering)
+      ledgerPage = 0;
+    } else if (filtering) {
       statisticsFilter = target.dataset.statsFilter as Outcome | "all";
-    else if (
+      ledgerPage = 0;
+    } else if (
       target.dataset.action === "stats" ||
       target.dataset.action === "journeys"
     ) {
       if (!showStatistics && !showJourneys) journeyScroll = window.scrollY;
       statisticsData = undefined;
       statisticsFilter = "all";
+      ledgerPage = 0;
       selectedJourneyMap = undefined;
       journeyOpenError = "";
       showStatistics = target.dataset.action === "stats";

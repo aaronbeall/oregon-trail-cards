@@ -18,6 +18,13 @@ test("batch generates the requested random player range with monotonic progress 
   assert.equal(result.progress.attempted, 60);
   assert.equal(result.progress.skipped, 0);
   assert.equal(result.cancelled, false);
+  assert.ok(
+    result.games
+      .filter((g) => g.outcome === "lost")
+      .every(
+        (g) => typeof g.lossReason === "string" && g.lossReason.length > 0,
+      ),
+  );
   assert.equal(progress[0].attempted, 0);
   assert.equal(progress.at(-1).attempted, 60);
   assert.ok(

@@ -7571,3 +7571,96 @@ body.timeline-compact .trail-afflicted {
     transition: none;
   }
 }
+.flow-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 16px 0 12px;
+}
+.flow-modes button {
+  padding: 7px 10px;
+  background: transparent;
+  color: var(--quiet);
+  border: 1px solid var(--line);
+  box-shadow: none;
+  font-size: 11px;
+}
+.flow-modes button[aria-pressed="true"] {
+  background: #69745b18;
+  border-color: var(--sage);
+  color: var(--ink);
+}
+.flow-neutral {
+  --flow-color: #b3ac8b;
+}
+.flow-illness {
+  --flow-color: #9c7884;
+}
+.flow-wagon {
+  --flow-color: #ad735b;
+}
+.flow-drowning {
+  --flow-color: #69868f;
+}
+.sankey-node rect {
+  fill: var(--flow-color);
+}
+.sankey-node text {
+  fill: var(--ink);
+  font:
+    12px Georgia,
+    serif;
+  stroke: var(--paper);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  paint-order: stroke;
+}
+.sankey-node .flow-count {
+  fill: var(--ink);
+  stroke-width: 2.5px;
+  font:
+    600 10.5px "Courier New",
+    monospace;
+}
+.layered-sankey .flow-start-label {
+  font-size: 10px;
+  letter-spacing: 0;
+}
+.layered-sankey .flow-ribbon {
+  stroke-width: 0.3;
+}
+.flow-fate-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 0;
+  margin-right: 10px;
+  color: var(--quiet);
+  font-size: 10px;
+}
+
+.ledger-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 20px;
+  font-size: 12px;
+  color: var(--quiet);
+}
+.ledger-pagination button {
+  padding: 8px 12px;
+  background: transparent;
+  font-size: 12px;
+}
+.stats-history:focus {
+  outline: none;
+}
+@media (max-width: 480px) {
+  .ledger-pagination {
+    gap: 10px;
+  }
+  .ledger-pagination button {
+    padding: 8px;
+  }
+}

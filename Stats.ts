@@ -13,7 +13,42 @@ export type JourneySummary = {
   players: Journey["players"];
   survivors: number;
   partial: boolean;
+  lossReason?: string;
 };
+/** Canonical labels keep legacy “second card” wording out of analysis. */
+export function canonicalCause(raw?: string): string {
+  if (!raw?.trim()) return "Cause unrecorded";
+  if (/drown/i.test(raw)) return "Drowning";
+  const known = [
+    "Broken axle",
+    "Broken tongue",
+    "Broken wheel",
+    "Dead oxen",
+    "Dysentery",
+    "Snakebite",
+    "Cholera",
+    "Measles",
+    "Typhoid",
+    "Starvation",
+    "Extreme cold",
+  ];
+  return (
+    known.find((cause) => raw.toLowerCase().includes(cause.toLowerCase())) ??
+    raw.trim()
+  );
+}
+export function journeyLossCause(state: Journey): string | undefined {
+  if (state.status !== "lost") return;
+  const wagon = (state.note ?? "").match(
+    /The wagon cannot continue:\s*(.*?)\s+went unremedied/i,
+  );
+  if (wagon) return canonicalCause(wagon[1]);
+  const death = (state.note ?? "").match(/died:\s*(.*?)\.?$/i);
+  if (death) return canonicalCause(death[1].replace(/\.$/, ""));
+  return state.players.some((p) => p.alive)
+    ? "Wagon stopped · cause unrecorded"
+    : "No survivors · cause unrecorded";
+}
 export function gameStatistics(
   records: { record: RecordedGame; state: Journey }[],
   mode: JourneyModeFilter = "all",
@@ -36,6 +71,7 @@ export function gameStatistics(
       players: state.players,
       survivors: state.players.filter((player) => player.alive).length,
       partial: !record.completeFromStart,
+      lossReason: journeyLossCause(state),
     }));
   return summarizeJourneys(games);
 }

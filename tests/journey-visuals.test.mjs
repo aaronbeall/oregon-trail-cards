@@ -20,7 +20,9 @@ function compile(name, imports = {}) {
 }
 const trail = compile("TrailCard"),
   supplies = compile("Supplies", { TrailCard: trail }),
-  historySource = compile("History");
+  historySource = compile("History"),
+  statsSource = compile("Stats"),
+  flowsSource = compile("Flows", { Stats: statsSource });
 const {
   flowCohorts,
   journeyMapEvents,
@@ -35,6 +37,7 @@ const {
     TrailCard: trail,
     Supplies: supplies,
     History: historySource,
+    Flows: flowsSource,
   })
 );
 const { TrailGame } = await import(trail);
@@ -391,6 +394,7 @@ test("each event has a trail anchor and detail connectors follow the route norma
       TrailCard: trail,
       Supplies: supplies,
       History: historySource,
+      Flows: flowsSource,
     })
   );
   for (const progress of [0, 0.15, 0.45, 0.75, 1]) {

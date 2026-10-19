@@ -76,3 +76,13 @@ A background Web Worker runs the shared headless brain, reports progress and all
 **Saved journeys / Temporary batch** switches between independent datasets. Temporary runs do not enter the journey archive, current save, local storage or saved-game totals. They disappear on reload/tab closure or **Clear dataset**. Run summaries retain only the fields needed for analysis, rather than full action traces, hands or inventories. They have no individual history/map links. The ledger shows at most 100 matching runs while every completed run contributes to charts, averages and the comparison by party size.
 
 The standalone `runSimulationBatch` function in `SimulationBatch.ts` accepts `{ count, minPlayers, maxPlayers, seed }`, plus progress and cancellation callbacks. Its seed reproduces party sizes and individual runs. It does not access browser storage or interactive game state.
+
+## Flow chart views
+
+The statistics Sankey has three views, shared by saved journeys and temporary batches:
+
+- **Journey outcomes**: departure → trail-card range → outcome → the recorded journey-ending cause for losses. Wagon failures remain separate from diseases/drowning. A lost journey contributes exactly once to this breakdown, even if several travellers died earlier.
+- **Player fates**: all travellers → party size → fate → recorded cause of death. People alive when a wagon fails are survivors of a stopped journey, not deaths. Oregon survivors, unfinished journeys and journeys set aside remain distinct.
+- **Days on the trail**: observed journey duration flows through sequential day batches before branching to outcomes. Batches are 10 days for short datasets and scale in multiples of 10 for longer datasets. In-progress saves end at “Still travelling”; the chart does not predict their eventual outcome.
+
+Ribbon widths represent actual counts and node labels include counts and percentages. Native hover tooltips describe each link. Legacy losses lacking an explicit final cause are labeled as unrecorded rather than guessed from earlier casualties. Compact batch summaries now retain the final loss cause alongside existing duration and player-fate fields; they still keep no full action history.

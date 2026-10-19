@@ -1,5 +1,5 @@
 import { seededRandom, simulateGame } from "./Computer";
-import type { JourneySummary } from "./Stats";
+import { journeyLossCause, type JourneySummary } from "./Stats";
 export type BatchOptions = {
   count: number;
   minPlayers: number;
@@ -95,6 +95,7 @@ export async function runSimulationBatch(
         days: Math.max(0, s.turn - 1),
         survivors: s.players.filter((p) => p.alive).length,
         partial: false,
+        lossReason: journeyLossCause(s),
         players: s.players.map(({ hand, supplies, ...p }) => ({
           ...p,
           hand: [],

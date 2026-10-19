@@ -12,6 +12,7 @@ import {
 import { replayGame, type RecordedGame } from "./History";
 import type { JourneySummary, Outcome } from "./Stats";
 import { supplyEmblem } from "./Supplies";
+import { renderJourneyFlow, type FlowMode } from "./Flows";
 const esc = (s: string) =>
   s.replace(
     /[&<>"']/g,
@@ -20,12 +21,6 @@ const esc = (s: string) =>
         c
       ]!,
   );
-const names: Record<Outcome, string> = {
-  won: "Oregon",
-  lost: "Lost on the trail",
-  travel: "Still travelling",
-  abandoned: "Set aside",
-};
 export function flowCohorts(games: JourneySummary[]) {
   const groups = new Map<
     string,
@@ -45,42 +40,9 @@ export function flowCohorts(games: JourneySummary[]) {
 export function journeyFlow(
   games: JourneySummary[],
   selected: Outcome | "all" = "all",
+  mode: FlowMode = "journeys",
 ) {
-  if (!games.length) return "";
-  const cohorts = flowCohorts(games),
-    unit = 220 / games.length;
-  const order: Outcome[] = ["won", "travel", "abandoned", "lost"];
-  const totals = Object.fromEntries(
-    order.map((outcome) => [
-      outcome,
-      games.filter((g) => g.outcome === outcome).length,
-    ]),
-  ) as Record<Outcome, number>;
-  let endY = 50;
-  const ports = new Map<Outcome, number>();
-  const labels = order
-    .filter((o) => totals[o])
-    .map((outcome) => {
-      ports.set(outcome, endY);
-      const y = endY;
-      endY += totals[outcome] * unit + 30;
-      return `<g class="flow-port flow-${outcome}"><rect x="912" y="${y}" width="6" height="${totals[outcome] * unit}" rx="2"/><text x="930" y="${y + (totals[outcome] * unit) / 2 - 3}">${names[outcome]}</text><text class="flow-count" x="930" y="${y + (totals[outcome] * unit) / 2 + 15}">${totals[outcome]} journey${totals[outcome] === 1 ? "" : "s"}</text></g>`;
-    })
-    .join("");
-  let sourceY = 65;
-  const ribbons = cohorts
-    .map((c) => {
-      const y = sourceY,
-        h = c.count * unit;
-      sourceY += h;
-      const to = ports.get(c.outcome)!;
-      ports.set(c.outcome, to + h);
-      const exit = 75 + c.stage * 125;
-      const path = `M45 ${y} H${exit} C${exit + 90} ${y},800 ${to},912 ${to} V${to + h} C800 ${to + h},${exit + 90} ${y + h},${exit} ${y + h} H45Z`;
-      return `<path class="flow-ribbon flow-${c.outcome}" d="${path}"><title>${c.count} journey${c.count === 1 ? "" : "s"} · ${c.stage === 5 ? "50 cards" : `${c.stage * 10}–${c.stage * 10 + 9} cards`} · ${names[c.outcome]}</title></path>`;
-    })
-    .join("");
-  return `<section class="journey-flow stats-panel"><div class="stats-panel-heading"><h3>Where the trail takes us</h3><span>${games.length} journey${games.length === 1 ? "" : "s"}</span></div><p class="stats-chart-note">Follow the ribbons from departure to outcome. Width shows how many journeys; each ribbon branches in the range where those wagons stop or currently rest.</p><div class="flow-scroll"><svg viewBox="0 0 1100 400" role="img" aria-label="Journeys flowing from Independence through trail-card progress to their outcomes"><text class="flow-start-label" x="40" y="25">INDEPENDENCE</text>${[0, 10, 20, 30, 40, 50].map((n, i) => `<g class="flow-stage"><path d="M${75 + i * 125} 45V335"/><text x="${75 + i * 125}" y="358" text-anchor="middle">${n === 50 ? "50 · Oregon" : `${n} cards`}</text></g>`).join("")}${ribbons}${labels}</svg></div><div class="flow-legend">${order.map((o) => `<button data-stats-filter="${o}" aria-pressed="${selected === o}" class="flow-${o}"><i></i>${names[o]} <strong>${totals[o]}</strong></button>`).join("")}</div></section>`;
+  return renderJourneyFlow(games, selected, mode);
 }
 export type MapAction = {
   turn: number;
