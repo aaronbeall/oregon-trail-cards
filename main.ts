@@ -2339,7 +2339,7 @@ function siteCredit() {
   return `<div class="site-credit">© ${new Date().getFullYear()} · Made with ❤️ and 🍌 by <a href="https://www.metamodernmonkey.com/" target="_blank" rel="noopener noreferrer">Meta Modern Monkey</a></div>`;
 }
 function welcomeScreen() {
-  return `<section class="decision welcome-screen" aria-labelledby="welcome-heading"><div class="welcome-art"><img src="${art.landscape}" alt="A covered wagon waiting beneath wide prairie skies"><span class="welcome-ticket"><span>Westward—to Oregon or bust</span><small>Probably die</small></span></div><div class="welcome-copy"><p class="eyebrow">Independence, Missouri · Spring 1847</p><h2 id="welcome-heading">This wagon won’t<br>pack itself.</h2><p>The road is long. The company is yours.<br>The oxen have made no promises.</p>${button("new", "Gather your travellers →")}<small>2–6 travellers · one rather hopeful wagon</small></div></section>`;
+  return `<section class="decision welcome-screen" aria-labelledby="welcome-heading"><div class="welcome-art"><img src="${art.landscape}" alt="A covered wagon waiting beneath wide prairie skies"><span class="welcome-ticket"><span>Westward—to Oregon or bust</span><small>Probably die</small></span></div><div class="welcome-copy"><p class="eyebrow">Independence, Missouri · Spring 1847</p><h2 id="welcome-heading">This wagon won’t<br>pack itself.</h2><p>The road is long. The company is yours.<br>The oxen have made no promises.</p>${button("new", "Gather your travellers →")}<small>Play solo or local co-op · 2–6 travellers, one rather hopeful wagon</small></div></section>`;
 }
 function journeysScreen() {
   if (!history?.archive.games.length)
