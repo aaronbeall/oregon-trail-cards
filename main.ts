@@ -137,6 +137,7 @@ const calamityArt: Record<Calamity, string> = {
 };
 let showJourneys = false;
 let journeyOpenError = "";
+let welcomeDismissed = false;
 let showStatistics = false;
 let selectedJourneyMap: string | undefined;
 let mapReturnView: "stats" | "journey" = "stats";
@@ -2334,7 +2335,15 @@ function journeyProgressRing(value: number, total: number, label: string) {
     total > 0 ? Math.max(0, Math.min(100, (value / total) * 100)) : 0;
   return `<span class="journey-progress-ring ${label === "Alive" ? "is-survival" : ""}"><svg viewBox="0 0 48 48" role="img" aria-label="${value} of ${total} ${label.toLowerCase()}"><title>${value} / ${total} ${label.toLowerCase()}</title><circle class="journey-ring-track" cx="24" cy="24" r="20"/><circle class="journey-ring-fill" cx="24" cy="24" r="20" pathLength="100" stroke-dasharray="${progress} 100" transform="rotate(-90 24 24)"/><text x="24" y="24" text-anchor="middle" dominant-baseline="central">${value}/${total}</text></svg><span>${label}</span></span>`;
 }
+function siteCredit() {
+  return `<div class="site-credit">© ${new Date().getFullYear()} · Made with ❤️ and 🍌 by <a href="https://www.metamodernmonkey.com/" target="_blank" rel="noopener noreferrer">Meta Modern Monkey</a></div>`;
+}
+function welcomeScreen() {
+  return `<section class="decision welcome-screen" aria-labelledby="welcome-heading"><div class="welcome-art"><img src="${art.landscape}" alt="A covered wagon waiting beneath wide prairie skies"><span class="welcome-ticket"><span>Westward—to Oregon or bust</span><small>Probably die</small></span></div><div class="welcome-copy"><p class="eyebrow">Independence, Missouri · Spring 1847</p><h2 id="welcome-heading">This wagon won’t<br>pack itself.</h2><p>The road is long. The company is yours.<br>The oxen have made no promises.</p>${button("new", "Gather your travellers →")}<small>2–6 travellers · one rather hopeful wagon</small></div></section>`;
+}
 function journeysScreen() {
+  if (!history?.archive.games.length)
+    return `<header><div><p class="eyebrow">A cooperative westward wander · 2–6 players</p><h1>Oregon Trail <i>Cards</i></h1></div></header><main class="journey-browser">${welcomeScreen()}</main>`;
   const data = loadStatisticsData();
   const records = data.games
     .map((record, index) => ({ ...record, number: index + 1 }))
@@ -2366,7 +2375,7 @@ function journeysScreen() {
             return `<article class="journey-list-row" data-ui-key="journey-choice-${escape(record.id)}"><img class="journey-list-art" src="${scene.src}" alt="${escape(scene.alt)}" loading="lazy" width="160" height="112"><div class="journey-list-copy"><div class="journey-list-title"><h3>Journey ${record.number}</h3><span class="stats-outcome-tag stats-tag-${record.outcome}">${outcomeNames[record.outcome]}</span>${current ? '<span class="journey-current-tag">Current</span>' : ""}</div><div class="journey-list-metrics">${journeyProgressRing(record.distance, 50, "Cards")}${journeyProgressRing(record.survivors, record.players.length, "Alive")}<span class="journey-list-date">${date}<small>${record.days} day${record.days === 1 ? "" : "s"} on the trail</small></span></div><div class="journey-list-party">${record.players.map((player, index) => `<span>${player.alive ? portraitImage(player.portrait ?? index % 6) : `<img class="stats-grave" src="${art.tombstoneIcon}" alt="">`}<span>${escape(player.name)}</span></span>`).join("")}</div></div><div class="journey-list-open">${turnName ? `<small>${escape(turnName)}’s turn</small>` : ""}<button data-open-journey="${escape(record.id)}" aria-label="Open Journey ${record.number}">${record.outcome === "won" || record.outcome === "lost" ? "View result" : "Open journey"} →</button></div></article>`;
           })
           .join("")}</div>`
-      : `<section class="stats-empty"><img src="${art.progressWagon}" alt=""><h3>No journeys yet.</h3><p>Pack a wagon to begin your first story.</p>${button("new", "New journey →")}</section>`
+      : welcomeScreen()
   }</main>`;
 }
 function loadStatisticsData() {
@@ -2573,7 +2582,10 @@ app.addEventListener("click", async (event) => {
     } else {
       showStatistics = false;
       showJourneys = false;
-      if (creating) confirming = !setup;
+      if (creating) {
+        welcomeDismissed = true;
+        confirming = !setup;
+      }
     }
     render();
     if (!filtering)
@@ -2721,6 +2733,9 @@ function render() {
       : selectedJourneyMap
         ? journeyMapScreen()
         : statisticsScreen();
+    const credit = document.createElement("template");
+    credit.innerHTML = selectedJourneyMap ? "" : siteCredit();
+    page.content.append(credit.content);
     const changed = reconcile(app, page.content);
     initializeJourneyMapViewport();
     scheduleStickyPanels();
@@ -2731,14 +2746,16 @@ function render() {
   const scene = journeyArtwork();
   const markup = `<header><div><p class="eyebrow">A cooperative westward wander · 2–6 players</p><h1>Oregon Trail <i>Cards</i></h1></div><div class="header-actions">${navigationIcons()}${setup ? (s.started ? button("resume", "Back to journey") : "") : ""}</div></header>${confirming ? `<aside class="restart-confirm"><span>Leave this journey behind?</span><div class="restart-actions">${button("cancel", "Stay here")}${button("confirm-new", "Start afresh")}</div></aside>` : ""}${
     setup
-      ? setupScreen()
+      ? !welcomeDismissed && !s.started && !history?.archive.games.length
+        ? welcomeScreen()
+        : setupScreen()
       : `<section class="journey"><img class="banner ${scene.src === art.landscape ? "" : "is-event"} ${[art.river, riverArt.moderate, riverArt.raging].includes(scene.src) ? "is-river" : ""}" src="${scene.src}" alt="${escape(scene.alt)}"></section><section class="players" aria-label="Travellers">${s.players.map((_, i) => playerCard(i)).join("")}</section>${trail()}${decision()}${
           s.status === "travel"
             ? `${s.phase !== "legacy" && s.phase !== "discard" ? trading() : ""}`
             : ""
         }`
   }
-<footer><details><summary>Rules of the road</summary><div class="help-content"><p>Play one connected trail card OR spend a turn supplying remedies. There is no automatic replacement draw. If no trail fits, draw one and end your turn. Supplies can be traded two for one at any time. Rivers pass between players until an even roll succeeds.</p><p>Calamity deadlines end after the affected player’s next turn (or second turn for two rounds), giving everyone a chance to help. Broken wagon parts and dead oxen stop trail play. Dead players may will two supplies. The remaining travellers carry on.</p><p>Each road connects to the last card played. Earlier cards recycle automatically when the draw pile runs out, while their visits remain on the trail. Fifty cards means Oregon.</p><p>Based on the <a href="https://www.buffalolib.org/sites/default/files/gaming-unplugged/inst/The%20Oregon%20Trail%20Card%20Game%20Instructions.pdf" target="_blank" rel="noreferrer">2017 Pressman rules</a>. See the repository’s rules notes for card text and edition differences. Your journey saves on this device.</p></div></details><span>${storageAvailable ? "Saved here" : "Couldn’t save locally"}</span></footer>`;
+<footer><details><summary>Rules of the road</summary><div class="help-content"><p>Play one connected trail card OR spend a turn supplying remedies. There is no automatic replacement draw. If no trail fits, draw one and end your turn. Supplies can be traded two for one at any time. Rivers pass between players until an even roll succeeds.</p><p>Calamity deadlines end after the affected player’s next turn (or second turn for two rounds), giving everyone a chance to help. Broken wagon parts and dead oxen stop trail play. Dead players may will two supplies. The remaining travellers carry on.</p><p>Each road connects to the last card played. Earlier cards recycle automatically when the draw pile runs out, while their visits remain on the trail. Fifty cards means Oregon.</p><p>Based on the <a href="https://www.buffalolib.org/sites/default/files/gaming-unplugged/inst/The%20Oregon%20Trail%20Card%20Game%20Instructions.pdf" target="_blank" rel="noreferrer">2017 Pressman rules</a>. See the repository’s rules notes for card text and edition differences. Your journey saves on this device.</p></div></details><span>${storageAvailable ? "Saved here" : "Couldn’t save locally"}</span></footer>${siteCredit()}`;
   const template = document.createElement("template");
   template.innerHTML = markup;
   // Keep valid user selections and their companion emblems in sync before diffing.

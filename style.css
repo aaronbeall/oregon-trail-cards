@@ -6850,3 +6850,111 @@ body.timeline-compact .trail-afflicted {
 .trail-outcome-tooltip .timeline-supply-change .supply-change-bubble::after {
   content: none;
 }
+
+.welcome-screen {
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid #69745b77;
+  border-radius: 6px;
+  background: #f1ead780;
+  text-align: center;
+}
+.welcome-art {
+  position: relative;
+  height: clamp(200px, 32vw, 350px);
+  overflow: hidden;
+  border-bottom: 1px solid var(--line);
+}
+.welcome-art > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 58%;
+}
+.welcome-ticket {
+  position: absolute;
+  right: 22px;
+  bottom: 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  color: var(--ink);
+  transform: rotate(-4deg);
+  font: italic 15px Georgia, serif;
+}
+.welcome-ticket > span,
+.welcome-ticket > small {
+  padding: 7px 12px;
+  background: var(--paper) url("./assets/paper.webp");
+  box-shadow: 1px 2px 0 #41483b33;
+}
+.welcome-ticket > small {
+  margin-right: 6px;
+  padding: 4px 9px;
+  color: var(--quiet);
+  font-size: 11px;
+}
+.welcome-copy {
+  padding: 32px 20px 38px;
+}
+.welcome-copy h2 {
+  margin: 16px 0;
+  font:
+    clamp(32px, 5vw, 48px)/1.08 Georgia,
+    serif;
+  letter-spacing: -1px;
+}
+.welcome-copy > p:not(.eyebrow) {
+  margin: 0 0 24px;
+  color: var(--quiet);
+  font:
+    16px/1.65 Georgia,
+    serif;
+}
+.welcome-copy > button {
+  padding: 13px 22px;
+  background: var(--sage);
+  border-color: var(--sage);
+  color: #fff8e5;
+  font-size: 15px;
+}
+.welcome-copy > button:hover {
+  background: #536047;
+}
+.welcome-copy > small {
+  display: block;
+  margin-top: 14px;
+  font:
+    11px/1.5 "Courier New",
+    monospace;
+  color: var(--quiet);
+}
+@media (max-width: 600px) {
+  .welcome-copy {
+    padding: 24px 15px 28px;
+  }
+  .welcome-ticket {
+    right: 12px;
+    bottom: 12px;
+    font-size: 13px;
+  }
+}
+
+.site-credit {
+  padding: 12px 0 8px;
+  text-align: center;
+  color: var(--quiet);
+  font-size: 11px;
+  line-height: 1.7;
+}
+.site-credit a {
+  color: inherit;
+  text-decoration-color: #70715d66;
+  text-underline-offset: 3px;
+}
+.site-credit a:hover,
+.site-credit a:focus-visible {
+  color: var(--ink);
+  text-decoration-color: currentColor;
+}
