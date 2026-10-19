@@ -12,6 +12,8 @@ import {
   nextJourneyStartDate,
   calendarDate,
   hazardDeadline,
+  hazardSeverity,
+  type HazardSeverity,
   type TrailCard,
   type Supply,
   type Hazard,
@@ -24,7 +26,7 @@ import "./style.css";
 import { randomName, randomParty, portraitSlots } from "./Party";
 import { gsap } from "gsap";
 import { reconcile } from "./Render";
-import { supplyEmblem, supplyColor } from "./Supplies";
+import { supplyEmblem, supplyColor, supplyCollectionEmblem } from "./Supplies";
 import { GameHistory, replayGame, type GameAction } from "./History";
 import { gameStatistics, type Outcome } from "./Stats";
 import {
@@ -176,6 +178,161 @@ function setBusy(b: boolean) {
     );
   }
 }
+let topExpandedManually = false;
+function updateHeaderSize() {
+  // Separate thresholds prevent the header's height change from toggling it
+  // repeatedly when the scroll position is close to the collapse point.
+  const compact = document.body.classList.contains("header-compact");
+  if (window.scrollY < 2 && topExpandedManually) {
+    topExpandedManually = false;
+    document.body.classList.remove("top-expanded-manually");
+  }
+  if (topExpandedManually) document.body.classList.remove("header-compact");
+  else if (window.scrollY > 8) document.body.classList.add("header-compact");
+  else if (window.scrollY < 2 && compact)
+    document.body.classList.remove("header-compact");
+}
+window.addEventListener(
+  "scroll",
+  () => {
+    updateHeaderSize();
+    scheduleStickyPanels();
+  },
+  { passive: true },
+);
+updateHeaderSize();
+let stickyFrame = 0;
+let stickyObserved: Element[] = [];
+const stickySizes = new ResizeObserver(() => scheduleStickyPanels());
+function scheduleStickyPanels() {
+  if (stickyFrame) return;
+  stickyFrame = requestAnimationFrame(() => {
+    stickyFrame = 0;
+    const header = app.querySelector<HTMLElement>(":scope > header");
+    const players = app.querySelector<HTMLElement>(":scope > .players");
+    const trail = app.querySelector<HTMLElement>(":scope > .trail-area");
+    const scene = app.querySelector<HTMLElement>(":scope > .journey");
+    if (!players && topExpandedManually) {
+      topExpandedManually = false;
+      document.body.classList.remove("top-expanded-manually");
+      updateHeaderSize();
+    }
+    const observed = [header, scene, players, trail].filter(
+      (el): el is HTMLElement => !!el,
+    );
+    if (
+      observed.length !== stickyObserved.length ||
+      observed.some((el, i) => el !== stickyObserved[i])
+    ) {
+      stickySizes.disconnect();
+      observed.forEach((el) => stickySizes.observe(el));
+      stickyObserved = observed;
+    }
+    const headerHeight = header?.getBoundingClientRect().height ?? 0;
+    const setSize = (name: string, height: number) => {
+      const value = `${height}px`;
+      if (document.documentElement.style.getPropertyValue(name) !== value)
+        document.documentElement.style.setProperty(name, value);
+    };
+    setSize("--sticky-header-height", headerHeight);
+    const toggle = (name: string, panel: HTMLElement | null) => {
+      const className = `${name}-compact`;
+      if (!panel) {
+        document.body.classList.remove(className);
+        return;
+      }
+      const compact = document.body.classList.contains(className);
+      const next = topExpandedManually
+        ? false
+        : window.scrollY > 8
+          ? true
+          : window.scrollY < 2
+            ? false
+            : compact;
+      if (next === compact) return;
+      const before = panel.getBoundingClientRect().height;
+      const scene =
+        name === "players"
+          ? app.querySelector<HTMLElement>(":scope > .journey")
+          : null;
+      const sceneBefore = scene?.getBoundingClientRect().height ?? 0;
+      const sceneMargin = scene
+        ? parseFloat(getComputedStyle(scene).marginBottom)
+        : 0;
+      const sceneOpacity = scene
+        ? parseFloat(getComputedStyle(scene).opacity)
+        : 1;
+      if (scene) {
+        gsap.killTweensOf(scene);
+        gsap.set(scene, { clearProps: "height,marginBottom,opacity" });
+      }
+      gsap.killTweensOf(panel, "height");
+      panel.style.height = "";
+      panel.classList.add("sticky-sizing");
+      document.body.classList.toggle(className, next);
+      const height = panel.getBoundingClientRect().height;
+      panel.classList.remove("sticky-sizing");
+      if (scene && !reducedMotion.matches) {
+        const sceneHeight = scene.getBoundingClientRect().height;
+        gsap.fromTo(
+          scene,
+          {
+            height: sceneBefore,
+            marginBottom: sceneMargin,
+            opacity: sceneOpacity,
+          },
+          {
+            height: sceneHeight,
+            marginBottom: next ? 0 : 20,
+            opacity: next ? 0 : 1,
+            duration: 0.36,
+            ease: "power2.inOut",
+            clearProps: "height,marginBottom,opacity",
+            onUpdate: scheduleStickyPanels,
+          },
+        );
+      }
+      const finish = () => {
+        scheduleStickyPanels();
+      };
+      if (reducedMotion.matches) {
+        finish();
+        return;
+      }
+      gsap.fromTo(
+        panel,
+        { height: before },
+        {
+          height,
+          duration: 0.36,
+          ease: "power2.inOut",
+          clearProps: "height",
+          onComplete: finish,
+        },
+      );
+    };
+    toggle("players", players);
+    const playersHeight = players?.getBoundingClientRect().height ?? 0;
+    setSize("--sticky-players-height", playersHeight);
+    const sceneHeight =
+      topExpandedManually && scene
+        ? scene.getBoundingClientRect().height +
+          parseFloat(getComputedStyle(scene).marginBottom)
+        : 0;
+    setSize("--sticky-scene-height", sceneHeight);
+    toggle("timeline", trail);
+    const tab = trail?.querySelector<HTMLButtonElement>(".top-expand-tab");
+    if (tab) {
+      const label = topExpandedManually
+        ? "Collapse top section"
+        : "Expand top section";
+      tab.setAttribute("aria-expanded", String(topExpandedManually));
+      tab.setAttribute("aria-label", label);
+      tab.title = label;
+    }
+  });
+}
+window.addEventListener("resize", scheduleStickyPanels);
 function playTimeline(build: (tl: gsap.core.Timeline) => void) {
   return new Promise<void>((resolve) => {
     active = gsap.timeline({
@@ -623,6 +780,35 @@ function conditionWarning(h: Hazard): ActionNotice[] {
     },
   ];
 }
+const severityRank: Record<HazardSeverity, number> = {
+  setback: 0,
+  risk: 1,
+  danger: 2,
+  critical: 3,
+};
+const severityLabels: Record<HazardSeverity, string> = {
+  setback: "Temporary injury",
+  risk: "Fatal if repeated",
+  danger: "Fatal if untreated",
+  critical: "Fatal deadline",
+};
+function playerSeverity(conditions: Hazard[]) {
+  return conditions.reduce<HazardSeverity>(
+    (level, h) =>
+      severityRank[hazardSeverity(h)] > severityRank[level]
+        ? hazardSeverity(h)
+        : level,
+    "setback",
+  );
+}
+function conditionTiming(h: Hazard) {
+  if (h.kind === "arm") return healingCountdown(h);
+  if (h.rounds === null) return "";
+  const deadline = hazardDeadline(game.state, h);
+  return deadline
+    ? `${deadline.turns} turn${deadline.turns === 1 ? "" : "s"} to treat`
+    : "";
+}
 function healingCountdown(hazard: Hazard) {
   if (hazard.kind !== "arm") return "";
   const turns = hazard.rounds ?? hazard.skip;
@@ -689,13 +875,23 @@ function playerInventory(index: number) {
     .join("");
   return `<div class="player-inventory"><div class="inventory-group" role="group" aria-label="Trail cards">${trail || `<button class="player-count inventory-empty" data-player-preview="trail" data-player-index="${index}" aria-label="${escape(player.name)} has no trail cards">No cards</button>`}</div><div class="inventory-group inventory-supplies" role="group" aria-label="Supplies">${supplies || `<button class="player-count inventory-empty" data-player-preview="supplies" data-player-index="${index}" aria-label="${escape(player.name)} has no supplies">No supplies</button>`}</div></div>`;
 }
+function compactPlayerInventory(index: number) {
+  const p = game.state.players[index];
+  const image = p.hand[0] ? art[p.hand[0].type] : art.trail;
+  const layers = Math.min(3, Math.max(1, p.hand.length));
+  return `<div class="compact-player-inventory"><button class="compact-card-stack ${p.hand.length ? "" : "is-empty"}" data-player-preview="summary" data-player-index="${index}" aria-label="${escape(p.name)}: ${p.hand.length} trail cards; full player details"><span class="inventory-layers" aria-hidden="true">${Array.from({ length: layers }, (_, i) => `<span class="inventory-layer" style="--inventory-layer:${layers - i - 1}">${i === layers - 1 ? `<img src="${image}" alt="">` : ""}</span>`).join("")}<b class="inventory-count">${p.hand.length}</b></span></button><button class="compact-supply-stack ${p.supplies.length ? "" : "is-empty"}" data-player-preview="summary" data-player-index="${index}" aria-label="${escape(p.name)}: ${p.supplies.length} supplies; full player details">${supplyCollectionEmblem(p.supplies)}</button></div>`;
+}
+function compactCondition(h: Hazard) {
+  const severity = hazardSeverity(h);
+  return `<span class="condition-compact" aria-hidden="true"><img src="${calamityArt[h.kind]}" alt=""><span class="compact-ailment-overlay">${actionIcon(severity === "setback" ? "clock" : severity === "risk" ? "draw" : "warning")}</span></span>`;
+}
 function playerCard(index: number, turnPlayer = game.state.current) {
   const s = game.state;
   const p = s.players[index];
   const conditions = s.hazards.filter(
     (h) => h.owner === index && !wagonKinds.has(h.kind),
   );
-  return `<div data-ui-key="player-${index}" class="player ${index === turnPlayer ? "current" : ""} ${!p.alive ? "dead" : conditions.length ? "unwell" : ""}"><div class="player-heading">${portrait(index)}<div><strong>${escape(p.name)} ${!p.alive ? "†" : index === turnPlayer ? '<span class="player-turn-tag">Turn</span>' : ""}</strong>${p.birthday ? `<small class="player-birthday">Born ${calendarDate(p.birthday)}</small>` : ""}</div></div>${p.alive ? playerInventory(index) : `<small class="player-epitaph">${escape(p.epitaph)}</small>`}<div class="player-state" aria-label="${escape(p.name)}’s condition">${(p.alive ? conditions : []).map((h) => `<button class="condition-status" style="--condition-art:url('${calamityArt[h.kind]}')" data-ui-key="condition-${h.id}" data-player-preview="condition" data-player-index="${index}" data-hazard-id="${h.id}" aria-label="${escape(conditionTitle(h.kind, index))}${healingCountdown(h) ? `: ${healingCountdown(h)}` : ""}: condition and remedies"><span>${titles[h.kind]}</span><span class="healing-countdown">${healingCountdown(h) || (h.rounds !== null ? `${h.rounds} round${h.rounds === 1 ? "" : "s"} left` : "Repeat is fatal")}</span></button>`).join("")}${p.alive && !conditions.length ? '<span class="condition-clear">In good health</span>' : ""}</div></div>`;
+  return `<div data-ui-key="player-${index}" data-player-preview="summary" data-player-index="${index}" tabindex="0" aria-label="${escape(p.name)}: full player details" class="player ${index === turnPlayer ? "current" : ""} ${!p.alive ? "dead" : conditions.length ? `unwell severity-${playerSeverity(conditions)}` : ""}"><div class="player-heading">${portrait(index)}<div><strong>${escape(p.name)} ${!p.alive ? "†" : index === turnPlayer ? '<span class="player-turn-tag">Turn</span>' : ""}</strong>${p.birthday ? `<small class="player-birthday">Born ${calendarDate(p.birthday)}</small>` : ""}</div></div>${p.alive ? `${playerInventory(index)}${compactPlayerInventory(index)}` : `<small class="player-epitaph">${escape(p.epitaph)}</small>`}<div class="player-state" aria-label="${escape(p.name)}’s condition">${(p.alive ? conditions : []).map((h) => `<button class="condition-status severity-${hazardSeverity(h)}" style="--condition-art:url('${calamityArt[h.kind]}')" data-ui-key="condition-${h.id}" data-player-preview="condition" data-player-index="${index}" data-hazard-id="${h.id}" aria-label="${escape(conditionTitle(h.kind, index))}: ${severityLabels[hazardSeverity(h)]}${conditionTiming(h) ? `, ${conditionTiming(h)}` : ""}: condition and remedies"><span>${titles[h.kind]}</span><span class="condition-severity">${severityLabels[hazardSeverity(h)]}</span>${conditionTiming(h) ? `<span class="healing-countdown">${conditionTiming(h)}</span>` : ""}${compactCondition(h)}</button>`).join("")}${p.alive && !conditions.length ? '<span class="condition-clear">In good health</span>' : ""}</div></div>`;
 }
 function refreshPlayerSummaries(turnPlayer: number) {
   const summaries = app.querySelector(".players");
@@ -804,7 +1000,7 @@ function journeyPreviewArtwork(state: Journey): SceneArt {
 function wagonState() {
   const conditions = game.state.hazards.filter((h) => wagonKinds.has(h.kind));
   return conditions.length
-    ? `<div class="wagon-state" aria-label="Wagon condition"><p class="eyebrow">Wagon conditions</p><div class="wagon-condition-list">${conditions.map((h) => `<button class="wagon-condition" data-ui-key="wagon-condition-${h.id}" data-wagon-preview data-hazard-id="${h.id}" aria-label="${titles[h.kind]}: wagon condition and remedies"><img src="${calamityArt[h.kind]}" alt=""><span>${titles[h.kind]}<small>${h.rounds !== null ? `${h.rounds} round${h.rounds === 1 ? "" : "s"} left · journey at risk` : h.kind === "grass" ? "Next grass calamity: oxen die" : "Next bad water: oxen die"}</small></span></button>`).join("")}</div></div>`
+    ? `<div class="wagon-state" aria-label="Wagon condition"><p class="eyebrow">Wagon conditions</p><div class="wagon-condition-list">${conditions.map((h) => `<button class="wagon-condition severity-${hazardSeverity(h)}" data-ui-key="wagon-condition-${h.id}" data-wagon-preview data-hazard-id="${h.id}" aria-label="${titles[h.kind]}: wagon condition and remedies"><img src="${calamityArt[h.kind]}" alt=""><span>${titles[h.kind]}<small>${h.rounds !== null ? `${h.rounds} round${h.rounds === 1 ? "" : "s"} left · journey at risk` : h.kind === "grass" ? "Next grass calamity: oxen die" : "Next bad water: oxen die"}</small></span></button>`).join("")}</div></div>`
     : "";
 }
 function remedyDescription(h: Hazard) {
@@ -841,8 +1037,9 @@ function turnOption(
   urgent = false,
   warning: ActionNotice[] = [],
   subject = "",
+  severity?: HazardSeverity,
 ) {
-  return `<article class="turn-option ${urgent ? "is-urgent" : ""}" data-ui-key="option-${key}"><div class="option-summary">${image ? `<img class="option-art" src="${image}" alt="">` : `<span class="option-symbol">${actionIcon(key)}</span>`}<div class="option-copy"><h3>${subject}${escape(title)}</h3>${text ? `<p>${escape(text)}</p>` : ""}${warning.length ? `<div class="option-notices" aria-label="Timing and consequences">${warning.map((notice) => `<span class="action-notice ${notice.danger ? "is-danger" : ""}">${actionIcon(notice.icon)}<span>${escape(notice.text)}</span></span>`).join("")}</div>` : ""}</div></div><div class="option-controls choices">${controls}</div></article>`;
+  return `<article class="turn-option ${urgent ? "is-urgent" : ""} ${severity ? `severity-${severity}` : ""}" data-ui-key="option-${key}"><div class="option-summary">${image ? `<img class="option-art" src="${image}" alt="">` : `<span class="option-symbol">${actionIcon(key)}</span>`}<div class="option-copy"><h3>${subject}${escape(title)}</h3>${text ? `<p>${escape(text)}</p>` : ""}${warning.length ? `<div class="option-notices" aria-label="Timing and consequences">${warning.map((notice) => `<span class="action-notice ${notice.danger ? "is-danger" : ""}">${actionIcon(notice.icon)}<span>${escape(notice.text)}</span></span>`).join("")}</div>` : ""}</div></div><div class="option-controls choices">${controls}</div></article>`;
 }
 function hazards(conditions: Hazard[]) {
   return conditions
@@ -880,6 +1077,7 @@ function hazards(conditions: Hazard[]) {
         true,
         conditionWarning(h),
         conditionPortrait(h.kind, h.owner),
+        hazardSeverity(h),
       );
     })
     .join("");
@@ -1490,7 +1688,7 @@ function lostSupplyEmblem(kind: Supply) {
   return `<span class="lost-supply">${supplyEmblem(kind)}</span>`;
 }
 function timelineSupplyEmblem(kind: Supply, change: "gain" | "loss") {
-  return `<span class="timeline-supply-change ${change}">${supplyEmblem(kind, 1, false, change)}</span>`;
+  return `<span class="timeline-supply-change ${change}">${supplyEmblem(kind)}<span class="supply-change-bubble" aria-hidden="true">${change === "gain" ? "+" : "−"}</span></span>`;
 }
 function trailOutcomes(reports: TrailReport[]) {
   const losses = reports.reduce(
@@ -1575,7 +1773,16 @@ function trailOutcomes(reports: TrailReport[]) {
     ),
   );
   return items.length
-    ? `<div class="trail-outcomes" role="group" aria-label="Trail outcomes" data-outcome-descriptions="${escape(JSON.stringify(items.map((item) => item.description)))}">${items.map((item) => `<button type="button" class="trail-outcome" ${item.owner !== undefined && item.owner >= 0 ? `data-outcome-owner="${item.owner}"` : ""} aria-label="${escape(item.description)}"><span class="outcome-symbol">${item.icon}</span></button>`).join("")}</div>`
+    ? `<div class="trail-outcomes" role="group" aria-label="Trail outcomes" data-outcome-descriptions="${escape(JSON.stringify(items.map((item) => item.description)))}">${items.map((item) => `<button type="button" class="trail-outcome" ${item.owner !== undefined && item.owner >= 0 ? `data-outcome-owner="${item.owner}"` : ""} aria-label="${escape(item.description)}"><span class="outcome-symbol">${item.icon}</span></button>`).join("")}${
+        items.length > 3
+          ? `<button type="button" class="trail-outcome trail-outcome-more" aria-label="${escape(
+              items
+                .slice(3)
+                .map((item) => item.description)
+                .join(" · "),
+            )}">+${items.length - 3}</button>`
+          : ""
+      }</div>`
     : "";
 }
 const outcomeTooltip = document.createElement("div");
@@ -1594,6 +1801,24 @@ function hideOutcomeTooltip() {
   outcomeTooltip.hidden = true;
 }
 function playerPreviewContent(row: HTMLElement) {
+  if (row.hasAttribute("data-trail-finish")) {
+    const s = game.state;
+    const remaining = Math.max(0, 50 - s.count);
+    const text =
+      s.status === "won"
+        ? `The wagon reaches Oregon on ${calendarDate(journeyDate(s.turn - 1, s.startDate))}, after ${s.turn - 1} days on the trail.`
+        : s.status === "lost"
+          ? `The journey ends ${remaining} trail card${remaining === 1 ? "" : "s"} short of Oregon. The valley waits beyond the trail.`
+          : `${remaining} trail card${remaining === 1 ? "" : "s"} to go. Beyond the last bend, Oregon City and the Willamette Valley await.`;
+    return `<img class="trail-summary-art" src="${art.victory}" alt="A welcoming Oregon homestead"><strong class="tooltip-title">${s.status === "won" ? "Arrived in Oregon" : "Oregon · Willamette Valley"}</strong><p>${escape(text)}</p>`;
+  }
+  if (row.hasAttribute("data-trail-summary")) {
+    const s = game.state;
+    const days = s.turn - 1;
+    const conditions = s.hazards.filter((h) => wagonKinds.has(h.kind));
+    const scene = journeyPreviewArtwork(s);
+    return `<img class="trail-summary-art" src="${scene.src}" alt="${escape(scene.alt)}"><strong class="tooltip-title">The trail so far</strong><p>${calendarDate(journeyDate(days, s.startDate))}<br>${days} day${days === 1 ? "" : "s"} on the trail</p><div class="trail-summary-progress" aria-hidden="true"><span style="width:${s.count * 2}%"></span></div><p>${s.count} of 50 trail cards · ${Math.max(0, 50 - s.count)} to Oregon</p>${s.phase === "river" ? `<p>River crossing pending.</p>` : s.phase === "repair" && s.pending ? `<p>${escape(titles[s.pending])}: repair pending.</p>` : ""}${conditions.map((h) => `<div class="trail-summary-condition"><img src="${calamityArt[h.kind]}" alt=""><span>${escape(conditionDescription(h.kind, h.owner))}</span></div>`).join("")}`;
+  }
   if (row.hasAttribute("data-wagon-preview")) {
     const hazard = game.state.hazards.find(
       (h) => h.id === Number(row.dataset.hazardId),
@@ -1614,6 +1839,33 @@ function playerPreviewContent(row: HTMLElement) {
   const index = Number(row.dataset.playerIndex);
   const player = game.state.players[index];
   if (!player) return;
+  if (kind === "summary") {
+    const conditions = game.state.hazards.filter(
+      (h) => h.owner === index && !wagonKinds.has(h.kind),
+    );
+    const supplies = (Object.keys(names) as Supply[]).flatMap((supply) => {
+      const count = player.supplies.filter((k) => k === supply).length;
+      return count ? [supplyEmblem(supply, count, true)] : [];
+    });
+    return `<strong class="tooltip-title">${portraitImage(player.portrait ?? index % 6)}<span>${escape(player.name)}${index === game.state.current && player.alive ? " · current turn" : ""}</span></strong>${player.birthday ? `<p>Born ${calendarDate(player.birthday)}</p>` : ""}${
+      !player.alive
+        ? `<div class="player-summary-death"><img src="${art.tombstoneIcon}" alt=""><p>Died ${player.deathDate ? calendarDate(player.deathDate) : "on the trail"}${player.deathCause ? `: ${escape(player.deathCause)}` : ""}.${player.deathDay !== undefined ? ` ${player.deathDay} days into the journey.` : ""}<br><em>${escape(player.epitaph)}</em></p></div>`
+        : `<section class="player-summary-section"><h4>Trail cards · ${player.hand.length}</h4>${player.hand.length ? `<div class="player-hand-preview">${player.hand.map((c) => `<div>${card(c)}<span>${escape(label(c))}</span></div>`).join("")}</div>` : `<p>No trail cards in hand.</p>`}</section><section class="player-summary-section"><h4>Supplies · ${player.supplies.length}</h4><div class="player-supply-preview">${supplies.join("") || "No supplies left."}</div></section><section class="player-summary-section"><h4>Health</h4>${
+            conditions.length
+              ? conditions
+                  .map(
+                    (h) =>
+                      `<div class="trail-summary-condition severity-${hazardSeverity(h)}"><img src="${calamityArt[h.kind]}" alt=""><div><strong>${titles[h.kind]}</strong><span class="condition-severity">${severityLabels[hazardSeverity(h)]}</span><p>${escape(remedyDescription(h))}</p>${conditionWarning(
+                        h,
+                      )
+                        .map((n) => `<p>${escape(n.text)}</p>`)
+                        .join("")}</div></div>`,
+                  )
+                  .join("")
+              : `<p>In good health.</p>`
+          }</section>`
+    }`;
+  }
   const condition =
     kind === "condition"
       ? game.state.hazards.find((h) => h.id === Number(row.dataset.hazardId))
@@ -1704,7 +1956,10 @@ function showOutcomeTooltip(row: HTMLElement) {
   gsap.killTweensOf(outcomeTooltip);
   outcomeTooltip.hidden = false;
   const rect = row.getBoundingClientRect();
-  const width = Math.min(280, innerWidth - 24);
+  const width = Math.min(
+    row.dataset.playerPreview === "summary" ? 360 : 280,
+    innerWidth - 24,
+  );
   outcomeTooltip.style.width = `${width}px`;
   outcomeTooltip.style.left = `${Math.max(12, Math.min(rect.left, innerWidth - width - 12))}px`;
   const height = outcomeTooltip.getBoundingClientRect().height;
@@ -1723,7 +1978,7 @@ function showOutcomeTooltip(row: HTMLElement) {
 app.addEventListener("mouseover", (event) => {
   if (tooltipPinned) return;
   const row = (event.target as Element).closest<HTMLElement>(
-    ".trail-outcome, .trail-afflicted, .trail-piece, .trail-start, [data-player-preview], [data-wagon-preview], [data-header-tooltip]",
+    ".trail-outcome, .trail-afflicted, .trail-piece, .trail-start, [data-player-preview], [data-wagon-preview], [data-trail-summary], [data-trail-finish], [data-header-tooltip]",
   );
   if (row && row !== tooltipOwner) showOutcomeTooltip(row);
 });
@@ -1742,14 +1997,14 @@ outcomeTooltip.addEventListener("mouseleave", () => {
 });
 app.addEventListener("focusin", (event) => {
   const row = (event.target as Element).closest<HTMLElement>(
-    ".trail-outcome, .trail-afflicted, .trail-piece, .trail-start, [data-player-preview], [data-wagon-preview], [data-header-tooltip]",
+    ".trail-outcome, .trail-afflicted, .trail-piece, .trail-start, [data-player-preview], [data-wagon-preview], [data-trail-summary], [data-trail-finish], [data-header-tooltip]",
   );
   if (row) showOutcomeTooltip(row);
   else hideOutcomeTooltip();
 });
 app.addEventListener("click", (event) => {
   const row = (event.target as Element).closest<HTMLElement>(
-    ".trail-outcome, .trail-afflicted, .trail-piece, .trail-start, [data-player-preview], [data-wagon-preview], [data-header-tooltip]",
+    ".trail-outcome, .trail-afflicted, .trail-piece, .trail-start, [data-player-preview], [data-wagon-preview], [data-trail-summary], [data-trail-finish], [data-header-tooltip]",
   );
   if (!row) {
     hideOutcomeTooltip();
@@ -1773,7 +2028,7 @@ document.addEventListener("pointerdown", (event) => {
   const target = event.target as Element;
   if (
     !target.closest(
-      ".trail-outcome, .trail-afflicted, .trail-piece, .trail-start, [data-player-preview], [data-wagon-preview], [data-header-tooltip]",
+      ".trail-outcome, .trail-afflicted, .trail-piece, .trail-start, [data-player-preview], [data-wagon-preview], [data-trail-summary], [data-trail-finish], [data-header-tooltip]",
     ) &&
     !outcomeTooltip.contains(target)
   )
@@ -1982,7 +2237,7 @@ function trail() {
     const c = report?.card ?? fallback;
     return `<div class="trail-piece ${step === activeStep && s.status === "travel" ? "active-connection" : ""}" data-ui-key="trail-step-${step}" tabindex="0" data-trail-results="${escape(JSON.stringify([timelineDescription(report, c)]))}" ${report?.playedBy !== undefined ? `data-trail-player="${report.playedBy}"` : ""} aria-label="Trail card ${step}${step === activeStep ? ", active connection" : ""}">${c ? card(c, reportArtwork(report, c), ["town", "fort"].includes(c.type) ? settlementStubs(timelineCardAt(step - 1), timelineCardAt(step + 1), step === 1) : "") : `<div class="earlier-trail"><img src="${art.trail}" alt="Earlier stretch of trail"></div>`}${trailPlayerBadge(report)}<small>${escape(trailReportTitle(report, c))}</small>${trailOutcomes(report ? [report] : [])}</div>`;
   }).join("");
-  return `<section class="trail-area" aria-label="Journey trail"><div class="section-line"><h2>The trail so far</h2><span class="journey-calendar">${calendarDate(journeyDate(s.turn - 1, s.startDate))} · ${s.turn - 1} day${s.turn === 2 ? "" : "s"} on the trail</span><button class="trail-return" data-action="trail-end" aria-label="Back to end of trail" title="Back to end of trail" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12h12m-5-5 5 5-5 5M20 5v14"/></svg></button></div><div class="map-track" data-ui-static role="progressbar" aria-label="Journey progress" aria-valuemin="0" aria-valuemax="50" aria-valuenow="${s.count}"><span style="width:${s.count * 2}%"><img class="progress-wagon" src="${art.progressWagon}" alt="" aria-hidden="true"></span></div><div class="trail-body"><div class="trail-route"><div class="trail-strip"><div class="trail-start" data-ui-key="trail-start" tabindex="0" data-trail-results="${escape(JSON.stringify(["Your journey begins in Independence, Missouri. The wagon is packed, the kettle is rattling, and Oregon waits at the far end of fifty trail cards."]))}" aria-label="Journey starts in Independence, Missouri"><div class="start-art"><img src="${art.independence}" alt="A wagon departing the frontier town of Independence"><span class="start-badge">START</span></div><strong>Independence</strong><small>Missouri</small></div>${entries}<div class="trail-marker ${s.status === "won" ? "arrived" : ""}" data-ui-key="trail-finish" style="--finish-progress:${s.count / 50};--finish-dots:${Math.ceil((50 - s.count) / 5)}" aria-label="${s.status === "won" ? "Arrived in Oregon" : "Destination: Oregon"}"><div class="finish-destination"><div class="finish-art"><img src="${art.landscape}" alt="Quiet hills and a wagon at the journey’s destination"><span class="finish-badge"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 14V2m0 0h9l-2 3 2 3H3"/></svg>${s.status === "won" ? "ARRIVED" : "FINISH"}</span></div><strong>Oregon</strong><small>Willamette Valley</small></div></div></div></div>${wagonState()}</div></section>`;
+  return `<section class="trail-area" aria-label="Journey trail"><div class="section-line"><h2>The trail so far</h2><button type="button" class="trail-compact-date" data-trail-summary aria-label="Trail summary for ${calendarDate(journeyDate(s.turn - 1, s.startDate))}"><time datetime="${journeyDate(s.turn - 1, s.startDate)}">${calendarDate(journeyDate(s.turn - 1, s.startDate))}</time></button><span class="journey-calendar">${calendarDate(journeyDate(s.turn - 1, s.startDate))} · ${s.turn - 1} day${s.turn === 2 ? "" : "s"} on the trail</span><button class="trail-return" data-action="trail-end" aria-label="Back to end of trail" title="Back to end of trail" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12h12m-5-5 5 5-5 5M20 5v14"/></svg></button></div><div class="map-track" data-ui-static role="progressbar" aria-label="Journey progress" aria-valuemin="0" aria-valuemax="50" aria-valuenow="${s.count}"><span style="width:${s.count * 2}%"><button type="button" class="progress-wagon" data-trail-summary aria-label="Show trail summary"><img src="${art.progressWagon}" alt=""></button></span></div><div class="trail-body"><div class="trail-route"><div class="trail-strip"><div class="trail-start" data-ui-key="trail-start" tabindex="0" data-trail-results="${escape(JSON.stringify(["Your journey begins in Independence, Missouri. The wagon is packed, the kettle is rattling, and Oregon waits at the far end of fifty trail cards."]))}" aria-label="Journey starts in Independence, Missouri"><div class="start-art"><img src="${art.independence}" alt="A wagon departing the frontier town of Independence"><span class="start-badge">START</span></div><strong>Independence</strong><small>Missouri</small></div>${entries}<div class="trail-marker ${s.status === "won" ? "arrived" : ""}" data-ui-key="trail-finish" data-trail-finish tabindex="0" style="--finish-progress:${s.count / 50};--finish-dots:${Math.ceil((50 - s.count) / 5)}" aria-label="${s.status === "won" ? "Arrived in Oregon" : "Destination: Oregon"}"><div class="finish-destination"><div class="finish-art"><img src="${art.landscape}" alt="Quiet hills and a wagon at the journey’s destination"><span class="finish-badge"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 14V2m0 0h9l-2 3 2 3H3"/></svg>${s.status === "won" ? "ARRIVED" : "FINISH"}</span></div><strong>Oregon</strong><small>Willamette Valley</small></div></div></div></div>${wagonState()}</div><button type="button" class="top-expand-tab" data-action="expand-top" aria-label="Expand top section" title="Expand top section"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button></section>`;
 }
 const outcomeNames: Record<Outcome, string> = {
   won: "Reached Oregon",
@@ -2395,6 +2650,7 @@ function render() {
         : statisticsScreen();
     const changed = reconcile(app, page.content);
     initializeJourneyMapViewport();
+    scheduleStickyPanels();
     return changed;
   }
   initializeJourneyMapViewport();
@@ -2448,6 +2704,7 @@ function render() {
   }
   renderedProgress = s.count;
   updateExchange();
+  scheduleStickyPanels();
   return changed;
 }
 // The six real faces share a cube; the model's roll determines the landing face.
@@ -3234,7 +3491,22 @@ app.addEventListener("click", async (event) => {
   const button = (event.target as HTMLElement).closest<HTMLButtonElement>(
     "button",
   );
-  if (!button || button.disabled || busy) return;
+  if (!button || button.disabled) return;
+  if (button.dataset.action === "expand-top") {
+    document.documentElement.style.setProperty(
+      "--top-toggle-min-height",
+      `${window.scrollY + innerHeight}px`,
+    );
+    topExpandedManually = !topExpandedManually;
+    document.body.classList.toggle(
+      "top-expanded-manually",
+      topExpandedManually,
+    );
+    updateHeaderSize();
+    scheduleStickyPanels();
+    return;
+  }
+  if (busy) return;
   if (button.dataset.action === "trail-end") {
     const strip = app.querySelector<HTMLElement>(".trail-strip");
     if (strip) {

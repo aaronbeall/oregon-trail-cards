@@ -86,6 +86,17 @@ export type Hazard = {
   born: number;
   skip: number;
 };
+export type HazardSeverity = "setback" | "risk" | "danger" | "critical";
+/** Presentation urgency follows the actual recovery/death rules, not illness names. */
+export function hazardSeverity(
+  hazard: Pick<Hazard, "kind" | "rounds">,
+): HazardSeverity {
+  if (hazard.kind === "arm") return "setback";
+  if (["cholera", "measles", "grass", "water"].includes(hazard.kind))
+    return "risk";
+  if (hazard.rounds !== null) return hazard.rounds <= 1 ? "critical" : "danger";
+  return "setback";
+}
 export const JOURNEY_START_DATE = "1847-04-01";
 // Fictional birthdays belong to the illustrated characters, in atlas order.
 export const portraitBirthdays = [

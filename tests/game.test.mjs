@@ -22,6 +22,7 @@ const {
   nextJourneyStartDate,
   JOURNEY_START_DATE,
   hazardDeadline,
+  hazardSeverity,
 } = await import(
   `data:text/javascript;base64,${Buffer.from(source).toString("base64")}`
 );
@@ -726,4 +727,13 @@ test("new journeys advance their fictional departure date without changing exist
   const dates = ["1847-04-30", "1847-04-02"];
   assert.equal(nextJourneyStartDate(dates), "1847-05-01");
   assert.deepEqual(dates, ["1847-04-30", "1847-04-02"]);
+});
+
+test("state severity separates self-healing, repeat-triggered, and timed fatal conditions", () => {
+  assert.equal(hazardSeverity({ kind: "arm", rounds: 1 }), "setback");
+  for (const kind of ["cholera", "measles", "grass", "water"])
+    assert.equal(hazardSeverity({ kind, rounds: null }), "risk");
+  assert.equal(hazardSeverity({ kind: "starvation", rounds: 2 }), "danger");
+  for (const kind of ["starvation", "cold", "typhoid", "oxen", "axle"])
+    assert.equal(hazardSeverity({ kind, rounds: 1 }), "critical");
 });

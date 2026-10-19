@@ -29,6 +29,7 @@ const {
   routePoint,
   eventRouteProgress,
   importantMapSteps,
+  mapActionTone,
 } = await import(
   compile("JourneyVisuals", {
     TrailCard: trail,
@@ -188,9 +189,15 @@ test("multi-turn crossings retain each player's own rolls and results", async ()
   g.cross();
   h.capture(g.state, { type: "roll", rolls: [2] });
   const before = structuredClone(h.archive);
-  const marker = journeyMapEvents(g.state, h.archive.games[0])[1];
+  const markers = journeyMapEvents(g.state, h.archive.games[0]).slice(1);
+  const marker = markers[0];
   assert.deepEqual(
-    marker.actions.map((a) => [a.turn, a.player, a.rolls]),
+    markers.map((m) => m.turn),
+    [1],
+  );
+  assert.equal(markers.length, 1);
+  assert.deepEqual(
+    markers.flatMap((m) => m.actions).map((a) => [a.turn, a.player, a.rolls]),
     [
       [1, 0, []],
       [1, 0, [3]],
@@ -199,6 +206,13 @@ test("multi-turn crossings retain each player's own rolls and results", async ()
     ],
   );
   assert.equal(marker.player, 0);
+  assert.deepEqual(
+    markers
+      .flatMap((m) => m.actions)
+      .filter((a) => a.type === "roll")
+      .map(mapActionTone),
+    ["negative", "negative", "positive"],
+  );
   const art = new Proxy({}, { get: (_, key) => `${String(key)}.webp` });
   const html = journeyMap(
     g.state,
@@ -210,7 +224,7 @@ test("multi-turn crossings retain each player's own rolls and results", async ()
   assert.deepEqual(h.archive, before);
 });
 
-test("remedies on a past calamity marker show the actual contributor for each later turn", async () => {
+test("remedies at the same stop keep chronological turns without adding travel dots", async () => {
   const { GameHistory } = await import(historySource);
   const values = new Map();
   const h = new GameHistory(
@@ -251,16 +265,23 @@ test("remedies on a past calamity marker show the actual contributor for each la
     type: "cure",
     args: { cure: String(hazard.id), supply: "water" },
   });
-  const marker = journeyMapEvents(g.state, h.archive.games[0])[1];
+  const markers = journeyMapEvents(g.state, h.archive.games[0]).slice(1);
+  assert.equal(markers.length, 1);
+  const actions = markers[0].actions;
   assert.deepEqual(
-    marker.actions.map((a) => a.player),
+    actions.map((a) => a.player),
     [0, 1, 2],
   );
-  assert.match(marker.actions[1].action, /Medicine to Ada/);
-  assert.deepEqual(marker.actions[1].supplies, [
+  assert.deepEqual(
+    actions.map((a) => a.turn),
+    [1, 2, 3],
+  );
+  assert.match(actions[1].action, /Medicine to Ada/);
+  assert.match(actions[1].context, /first faced on turn 1/);
+  assert.deepEqual(actions[1].supplies, [
     { player: 1, kind: "medicine", delta: -1 },
   ]);
-  assert.deepEqual(marker.actions[2].supplies, [
+  assert.deepEqual(actions[2].supplies, [
     { player: 2, kind: "water", delta: -1 },
   ]);
 });
@@ -356,6 +377,7 @@ test("inheritance stays attached to the death turn and separates recipients from
   assert.match(html, /map-turn-badge/);
   assert.match(html, /map-event-card/);
   assert.match(html, /map-event-memorial/);
+  assert.match(html, /tone-negative/);
   assert.match(html, /R.I.P./);
   assert.match(html, /Returned to the supply exchange/);
   assert.match(html, /timeline-supply-change gain/);
@@ -407,4 +429,130 @@ test("event spacing varies deterministically without changing order or progress 
   assert.equal(eventRouteProgress(12, 30), eventRouteProgress(12, 40));
   assert.equal(eventRouteProgress(50, 50), 1);
   assert.equal(eventRouteProgress(51, 50), 1);
+});
+
+test("map event colors reflect actual rolls and effects rather than wording", () => {
+  const action = {
+    turn: 1,
+    player: 0,
+    action: "Attempted a repair",
+    text: ["A lucky repair"],
+    rolls: [1],
+    supplies: [],
+    type: "repair",
+  };
+  assert.equal(mapActionTone(action), "negative");
+  assert.equal(
+    mapActionTone({ ...action, rolls: [4], text: ["The wheel was broken"] }),
+    "positive",
+  );
+  assert.equal(
+    mapActionTone({
+      ...action,
+      type: "play",
+      rolls: [],
+      card: { type: "calamity" },
+    }),
+    "negative",
+  );
+  assert.equal(
+    mapActionTone({
+      ...action,
+      type: "cure",
+      rolls: [],
+      supplies: [{ player: 0, kind: "water", delta: -1 }],
+    }),
+    "positive",
+  );
+  assert.equal(
+    mapActionTone({ ...action, type: "take", rolls: [] }),
+    "positive",
+  );
+  assert.equal(
+    mapActionTone({ ...action, type: "draw", rolls: [] }),
+    "neutral",
+  );
+  assert.equal(
+    mapActionTone({ ...action, rolls: [6], deaths: [1] }),
+    "negative",
+  );
+});
+
+test("turn 8 treatment follows turns 6 and 7 instead of rewriting the turn 5 calamity", async () => {
+  const { GameHistory } = await import(historySource);
+  const h = new GameHistory(
+    { getItem: () => null, setItem() {} },
+    () => "2026-10-18",
+    () => "chronology",
+  );
+  const g = new TrailGame(() => 0.25);
+  g.reset(["Bram Whitlow", "Ada", "Bea"]);
+  g.state.turn = 5;
+  let id = 1000;
+  const card = (type) => ({
+    id: id++,
+    type,
+    left: 1,
+    right: 1,
+    rotated: false,
+  });
+  g.state.players[0].hand = [card("calamity")];
+  g.state.players[0].supplies = ["clothes"];
+  g.state.players[1].hand = [card("trail"), card("trail")];
+  g.state.players[2].hand = [card("trail"), card("trail")];
+  g.state.calamities = ["cold"];
+  h.capture(g.state, { type: "start" });
+  assert.ok(g.play(0));
+  const hazard = g.state.hazards[0];
+  hazard.trailStep = 1;
+  g.state.trailReports = {
+    1: {
+      title: "Bram Whitlow is suffering from extreme cold",
+      calamity: "cold",
+      owner: 0,
+      playedBy: 0,
+      card: { ...g.state.run[0] },
+      results: ["Bram Whitlow is suffering from extreme cold."],
+      gains: {},
+      losses: 0,
+      deaths: [],
+    },
+  };
+  h.capture(g.state, { type: "play", args: { play: "0" } });
+  for (let i = 0; i < 2; i++) {
+    assert.ok(g.play(0));
+    h.capture(g.state, { type: "play", args: { play: "0" } });
+  }
+  assert.equal(g.state.turn, 8);
+  assert.ok(g.cure(hazard.id, "clothes"));
+  g.state.trailReports[1].title = "Extreme cold remedied";
+  g.state.trailReports[1].results.push(
+    "Bram Whitlow no longer has extreme cold.",
+  );
+  h.capture(g.state, {
+    type: "cure",
+    args: { cure: String(hazard.id), supply: "clothes" },
+  });
+  for (let i = 0; i < 2; i++) {
+    assert.ok(g.play(0));
+    h.capture(g.state, { type: "play", args: { play: "0" } });
+  }
+  const before = structuredClone(h.archive);
+  const events = journeyMapEvents(g.state, h.archive.games[0]).slice(1);
+  assert.deepEqual(
+    events.map((e) => e.turn),
+    [5, 6, 7, 9, 10],
+  );
+  assert.equal(events.length, g.state.count);
+  assert.deepEqual(
+    events[2].actions.map((a) => a.turn),
+    [7, 8],
+  );
+  assert.match(events[2].actions[1].context, /first faced on turn 5/);
+  assert.equal(events[2].actions[1].type, "cure");
+  assert.ok(!events[0].actions.some((a) => a.turn === 8));
+  assert.ok(!JSON.stringify(events[0]).includes("remedied"));
+  assert.ok(events.every((e, i) => !i || e.progress > events[i - 1].progress));
+  assert.equal(events.at(-1).progress, g.state.count / 50);
+  assert.deepEqual(h.archive, before);
 });

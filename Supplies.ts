@@ -47,6 +47,17 @@ export function supplyEmblem(
   return `<span class="supply-token ${quantity === 0 ? "supply-empty" : ""}" data-ui-key="supply-${kind}" data-supply-kind="${kind}" style="--supply-color:${color}"><span class="supply-stack" style="--supply-layers:${layers}" aria-hidden="true">${Array.from({ length: layers }, (_, i) => `<span class="supply-seal" style="--layer:${layers - i - 1}">${i === layers - 1 ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${icon}</svg>` : ""}</span>`).join("")}${!change && (count || quantity !== 1) ? `<b class="supply-count">${quantity}</b>` : ""}${change ? `<span class="supply-change-bubble" aria-hidden="true">${change === "gain" ? "+" : "−"}${quantity}</span>` : ""}</span><span class="supply-label">${names[kind]}${count || quantity !== 1 ? `<span class="sr-only">: ${quantity}</span>` : ""}</span></span>`;
 }
 
+/** One colored layer per supply type, with the most plentiful type on top. */
+export function supplyCollectionEmblem(supplies: Supply[]) {
+  if (!supplies.length) return supplyEmblem("food", 0, true);
+  const counts = new Map<Supply, number>();
+  supplies.forEach((kind) => counts.set(kind, (counts.get(kind) ?? 0) + 1));
+  const kinds = [...counts.keys()].sort(
+    (a, b) => counts.get(a)! - counts.get(b)! || a.localeCompare(b),
+  );
+  return `<span class="supply-token supply-collection"><span class="supply-stack" style="--supply-layers:${kinds.length}" aria-hidden="true">${kinds.map((kind, i) => `<span class="supply-seal" data-layer-supply="${kind}" style="--layer:${kinds.length - i - 1};--supply-color:${emblems[kind].color}">${i === kinds.length - 1 ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${emblems[kind].icon}</svg>` : ""}</span>`).join("")}<b class="supply-count">${supplies.length}</b></span><span class="sr-only">${supplies.length} supplies across ${kinds.length} types</span></span>`;
+}
+
 export function hiddenSupply(label: string) {
   return `<span class="supply-token supply-hidden"><span class="supply-stack" aria-hidden="true"><span class="supply-seal">?</span></span><span class="supply-label">${label}</span></span>`;
 }

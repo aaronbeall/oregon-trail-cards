@@ -89,6 +89,7 @@ export type MapAction = {
   type?: string;
   card?: TrailCard;
   deaths?: number[];
+  context?: string;
   text: string[];
   rolls: number[];
   supplies: { player: number; kind: Supply; delta: number }[];
@@ -108,6 +109,15 @@ export type MapEvent = {
   turn?: number;
   player?: number;
   actions: MapAction[];
+  trailStep?: number;
+  progress?: number;
+  artKind?: string;
+};
+type RecordedMapAction = {
+  action: MapAction;
+  count: number;
+  report?: TrailReport;
+  artKind?: string;
 };
 const sharedConditions = new Set([
   "axle",
@@ -123,6 +133,7 @@ export function journeyMapEvents(
 ): MapEvent[] {
   const timing = new Map<number, { turn: number; player: number }>();
   const actions = new Map<number, MapAction[]>();
+  const chronological: RecordedMapAction[] = [];
   const deaths = new Map<
     number,
     { step: number; turn: number; player: number }
@@ -295,6 +306,9 @@ export function journeyMapEvents(
         player: death?.player ?? event.player,
         action,
         type,
+        context: hazard
+          ? `${titles[hazard.kind]}${timing.get(hazard.trailStep ?? -1)?.turn ? ` first faced on turn ${timing.get(hazard.trailStep!)!.turn}` : hazard.trailStep ? ` first faced at trail card ${hazard.trailStep}` : ""}.`
+          : undefined,
         card:
           type === "play"
             ? previous.players[event.player]?.hand[Number(args.play)]
@@ -315,33 +329,19 @@ export function journeyMapEvents(
         inheritance,
       });
       actions.set(step, list);
-      for (const condition of previous.hazards) {
-        const person = next.players[condition.owner];
-        if (
-          !condition.trailStep ||
-          condition.trailStep === step ||
-          !previous.players[condition.owner].alive ||
-          person.alive ||
-          !person.deathCause
-            ?.toLowerCase()
-            .includes(titles[condition.kind].toLowerCase())
-        )
-          continue;
-        const related = actions.get(condition.trailStep) ?? [];
-        related.push({
-          turn: event.turn,
-          player: event.player,
-          action: `${titles[condition.kind]} became fatal`,
-          type: "death",
-          deaths: [condition.owner],
-          text: [`${person.name} died of ${person.deathCause}.`],
-          rolls: [],
-          supplies: [],
-        });
-        actions.set(condition.trailStep, related);
-      }
+      chronological.push({
+        action: list.at(-1)!,
+        count: next.count,
+        report: next.trailReports?.[step],
+        artKind:
+          hazard?.kind ??
+          (type === "repair" ? (previous.pending ?? undefined) : undefined),
+      });
     }
     previous = next;
+  }
+  if (record?.initial && chronological.length) {
+    return chronologicalMapEvents(state, record.initial, chronological);
   }
   const cards = new Map<number, TrailCard>(),
     preserved = [...state.stacks.flat(), ...state.run];
@@ -380,6 +380,118 @@ export function journeyMapEvents(
     },
     ...events,
   ];
+}
+
+/** A dot marks forward travel; intervening turns stay at the wagon's current stop. */
+function chronologicalMapEvents(
+  state: Journey,
+  initial: Journey,
+  entries: RecordedMapAction[],
+): MapEvent[] {
+  const events = journeyMapEvents(initial);
+  const groups: RecordedMapAction[][] = [];
+  for (const entry of entries) {
+    const action = entry.action;
+    // An estate is a consequence of its death, rather than the next player's turn.
+    const prior = action.inheritance?.linkedToDeath
+      ? groups.find(
+          (g) =>
+            g[0].action.turn === action.turn &&
+            g[0].action.player === action.player,
+        )
+      : groups.at(-1);
+    if (
+      prior &&
+      (action.inheritance?.linkedToDeath || prior[0].count === entry.count)
+    )
+      prior.push(entry);
+    else groups.push([entry]);
+  }
+  for (const group of groups) {
+    const first = group[0],
+      actions = group.map((e) => e.action);
+    const main =
+      group.find((e) => e.action.type === "play") ??
+      [...group]
+        .reverse()
+        .find(
+          (e) =>
+            !["end", "leave", "will-supplies"].includes(e.action.type ?? ""),
+        ) ??
+      first;
+    const action = main.action;
+    const count = Math.max(...group.map((e) => e.count));
+    const existing = events.find((e) => (e.trailStep ?? e.step) === count);
+    if (existing) {
+      existing.actions.push(...actions);
+      if (existing.report)
+        existing.report = {
+          ...existing.report,
+          deaths: [
+            ...(existing.report.deaths ?? []),
+            ...actions
+              .flatMap((a) => a.deaths ?? [])
+              .map((index) => ({
+                name: state.players[index].name,
+                cause: state.players[index].deathCause ?? "unknown causes",
+              })),
+          ],
+        };
+      continue;
+    }
+    const isRemedy = action.type === "cure" || action.type === "town";
+    const report = [...group].reverse().find((e) => e.report)?.report;
+    const deaths = actions
+      .flatMap((a) => a.deaths ?? [])
+      .map((index) => ({
+        name: state.players[index].name,
+        cause: state.players[index].deathCause ?? "unknown causes",
+      }));
+    const kind = isRemedy
+      ? "remedy"
+      : action.type === "roll"
+        ? "river"
+        : action.type === "repair"
+          ? "repair"
+          : action.type === "play"
+            ? (main.report?.calamity ?? action.card?.type ?? "unknown")
+            : (action.type ?? "unknown");
+    const title = isRemedy
+      ? action.action
+      : action.type === "roll"
+        ? action.rolls.at(-1)! % 2 === 0
+          ? "River crossing succeeded"
+          : "River crossing failed"
+        : action.type === "repair"
+          ? action.rolls.at(-1)! >= 4
+            ? "Repair succeeded"
+            : "Repair failed"
+          : action.type === "play"
+            ? (main.report?.title ??
+              (action.card ? label(action.card) : "Trail card played"))
+            : action.action;
+    events.push({
+      step: events.length,
+      trailStep: count,
+      title,
+      kind,
+      artKind:
+        main.artKind ??
+        (isRemedy || kind === "repair" ? main.report?.calamity : undefined),
+      card: action.card,
+      report: report ? { ...report, deaths } : undefined,
+      turn: first.action.turn,
+      player: first.action.player,
+      actions,
+    });
+  }
+  for (const event of events) {
+    event.progress = eventRouteProgress(
+      event.trailStep ?? event.step,
+      state.count,
+    );
+  }
+  return events;
 }
 
 // Approximate main historic corridor, projected into the generated north-up atlas extent.
@@ -470,6 +582,7 @@ export function importantMapSteps(events: MapEvent[]) {
           e.actions.filter((a) => a.action.includes("crossing")).length * 4,
         )
       );
+    if (e.kind === "remedy" || e.kind === "repair") return 55;
     if (e.kind === "town" || e.kind === "fort") return 45;
     return 0;
   };
@@ -589,6 +702,33 @@ function mapGravestone(index: number, state: Journey, assets: MapAssets) {
   const person = state.players[index];
   return `<div class="memorial map-event-memorial" aria-label="Gravestone for ${esc(person.name)}"><div class="memorial-stone"><img class="memorial-template" src="${assets.art.tombstone ?? assets.art.tombstoneIcon}" alt=""><div class="memorial-inscription"><span class="memorial-rip">R.I.P.</span><h3>${esc(person.name)}</h3><div class="memorial-dates">${person.birthday ? calendarDate(person.birthday) : "?"} — ${person.deathDate ? calendarDate(person.deathDate) : "?"}${person.deathDay !== undefined ? `<small>${person.deathDay} days on the trail</small>` : ""}</div><p class="memorial-epitaph">${esc(person.epitaph || person.deathCause || "The prairie remembers.")}</p></div></div></div>`;
 }
+export function mapActionTone(
+  action: MapAction,
+): "positive" | "negative" | "neutral" {
+  if (action.deaths?.length || action.type === "death") return "negative";
+  if (action.type === "play" && action.card?.type === "calamity")
+    return "negative";
+  const roll = action.rolls.at(-1);
+  if (roll !== undefined && action.type === "repair")
+    return roll >= 4 ? "positive" : "negative";
+  if (roll !== undefined && action.type === "roll")
+    return roll % 2 === 0 ? "positive" : "negative";
+  if (["cure", "town", "take"].includes(action.type ?? "")) return "positive";
+  if (
+    action.type === "play" &&
+    action.card &&
+    ["trail", "town", "fort"].includes(action.card.type)
+  )
+    return "positive";
+  if (action.type === "trade" || action.type === "draw") return "neutral";
+  if (
+    action.supplies.some((s) => s.delta < 0) &&
+    !action.supplies.some((s) => s.delta > 0)
+  )
+    return "negative";
+  if (action.supplies.some((s) => s.delta > 0)) return "positive";
+  return "neutral";
+}
 function turnHistory(actions: MapAction[], state: Journey, assets: MapAssets) {
   const groups: { turn: number; player: number; actions: MapAction[] }[] = [];
   for (const action of actions) {
@@ -616,7 +756,7 @@ function turnHistory(actions: MapAction[], state: Journey, assets: MapAssets) {
         .map((a) =>
           a.inheritance
             ? inheritanceHistory(a.inheritance, state, assets)
-            : `<div class="map-turn-action"><div class="map-event-heading"><span class="map-event-visual">${mapEventVisual(a, assets)}</span><strong>${esc(a.action)}${a.rolls.length ? ` · rolled ${a.rolls.join(", ")}` : ""}</strong></div>${a.text.map((t) => `<p>${esc(t)}</p>`).join("")}${a.supplies.length ? `<div class="map-supplies">${a.supplies.map((s) => `<span class="map-supply-change">${mapSupplyChange(s.kind, s.delta)}<small>${esc(state.players[s.player]?.name ?? "Traveller")}</small></span>`).join("")}</div>` : ""}${(a.deaths ?? []).map((index) => mapGravestone(index, state, assets)).join("")}</div>`,
+            : `<div class="map-turn-action tone-${mapActionTone(a)}"><div class="map-event-heading"><span class="map-event-visual">${mapEventVisual(a, assets)}</span><strong>${esc(a.action)}${a.rolls.length ? ` · rolled ${a.rolls.join(", ")}` : ""}</strong></div>${a.context ? `<p class="map-event-context">${esc(a.context)}</p>` : ""}${a.text.map((t) => `<p>${esc(t)}</p>`).join("")}${a.supplies.length ? `<div class="map-supplies">${a.supplies.map((s) => `<span class="map-supply-change">${mapSupplyChange(s.kind, s.delta)}<small>${esc(state.players[s.player]?.name ?? "Traveller")}</small></span>`).join("")}</div>` : ""}${(a.deaths ?? []).map((index) => mapGravestone(index, state, assets)).join("")}</div>`,
         )
         .join("")}</section>`;
     })
@@ -641,7 +781,8 @@ export function journeyMap(
 ) {
   const events = journeyMapEvents(state, record);
   const end: MapEvent = {
-    step: state.count + 1,
+    step: events.length,
+    progress: state.count / 50,
     title:
       state.status === "won"
         ? "Oregon City"
@@ -659,7 +800,7 @@ export function journeyMap(
   const trailAnchors: string[] = [];
   const markers = entries
     .map((e, i) => {
-      const progress = eventRouteProgress(e.step, state.count);
+      const progress = e.progress ?? eventRouteProgress(e.step, state.count);
       const point = routePoint(progress);
       const quiet =
         e.kind !== "start" && e.kind !== "finish" && !important.has(e.step);
@@ -676,8 +817,11 @@ export function journeyMap(
         x: point.x + normal.x * offset,
         y: point.y + normal.y * offset,
       };
+      const endpointDot =
+        e.kind === "start" ||
+        (state.status === "travel" && i === events.length - 1);
       trailAnchors.push(
-        `${offset ? `<line class="map-event-connector" x1="${point.x}" y1="${point.y}" x2="${detail.x}" y2="${detail.y}"/>` : ""}${e.kind !== "finish" ? `<circle class="map-event-dot" data-map-dot="${e.step}" cx="${point.x}" cy="${point.y}" r="5.5"/>` : ""}`,
+        `${offset ? `<line class="map-event-connector" x1="${point.x}" y1="${point.y}" x2="${detail.x}" y2="${detail.y}"/>` : ""}${e.kind !== "finish" ? `<circle class="map-event-dot" data-map-dot="${e.step}" cx="${point.x}" cy="${point.y}" r="${endpointDot ? 8 : 5.5}"/>` : ""}`,
       );
       const report = e.report;
       const image =
@@ -689,7 +833,7 @@ export function journeyMap(
               : state.status === "lost"
                 ? assets.art.defeat
                 : assets.art.progressWagon
-            : (assets.calamities[e.kind] ??
+            : (assets.calamities[e.artKind ?? e.kind] ??
               (e.kind === "river"
                 ? assets.art.river
                 : e.kind === "town"
@@ -711,19 +855,20 @@ export function journeyMap(
               return `<p class="map-death">${esc(d.name)} died of ${esc(d.cause)}.</p>${index >= 0 ? mapGravestone(index, state, assets) : `<img class="map-fallback-grave" src="${assets.art.tombstone ?? assets.art.tombstoneIcon}" alt="Gravestone">`}`;
             })
             .join("")}`;
+      const stopTurns = [...new Set(e.actions.map((a) => a.turn))];
       const description =
         e.kind === "start"
           ? `Departed ${calendarDate(state.startDate ?? "1847-04-01")} from Independence, Missouri.`
           : e.kind === "finish"
             ? state.note
-            : `Trail card ${e.step} of 50`;
-      const content = `<div class="map-tooltip-summary"><img class="map-detail-art" src="${image}" alt=""><div><p class="eyebrow">${e.kind === "start" ? "Departure" : e.kind === "finish" ? "Journey status" : `Trail marker ${e.step}`}</p><h4>${esc(e.title)}</h4><p>${esc(description)}</p></div></div>${recorded}`;
+            : `Trail card ${e.trailStep ?? e.step} of 50${stopTurns.length > 1 ? ` · Turns ${Math.min(...stopTurns)}–${Math.max(...stopTurns)} at this stop` : ""}`;
+      const content = `<div class="map-tooltip-summary"><img class="map-detail-art" src="${image}" alt=""><div><p class="eyebrow">${e.kind === "start" ? "Departure" : e.kind === "finish" ? "Journey status" : e.turn !== undefined ? `Turn ${e.turn}` : `Trail marker ${e.trailStep ?? e.step}`}</p><h4>${esc(e.title)}</h4><p>${esc(description)}</p></div></div>${recorded}`;
       const turns = new Set(e.actions.map((a) => `${a.turn}:${a.player}`)).size;
       const dot =
         quiet || e.kind === "finish"
           ? ""
           : `<button type="button" class="map-trail-dot" style="left:${point.x / 16}%;top:${point.y / 9}%" data-map-dot-target="${e.step}" data-map-content="${esc(content)}" aria-label="${esc(e.title)}: event details"></button>`;
-      return `${dot}<button type="button" class="map-marker ${quiet ? "is-quiet" : ""} ${e.kind === "finish" || e.kind === "start" ? "is-endpoint" : ""}" style="left:${detail.x / 16}%;top:${detail.y / 9}%" data-map-marker data-map-step="${e.step}" data-map-content="${esc(content)}" aria-label="${e.kind === "start" ? "Start" : e.kind === "finish" ? "Current outcome" : `Card ${e.step}`}: ${esc(e.title)}${turns > 1 ? ` · ${turns} turns` : ""}"><span class="map-marker-image"><img src="${image}" alt="">${report?.deaths?.length ? `<img class="map-death-badge" src="${assets.art.tombstoneIcon}" alt="Death">` : ""}</span>${e.kind === "start" || e.kind === "finish" ? `<span class="map-marker-label">${esc(e.title)}</span>` : ""}</button>`;
+      return `${dot}<button type="button" class="map-marker ${quiet ? "is-quiet" : ""} ${e.kind === "finish" || e.kind === "start" ? "is-endpoint" : ""}" style="left:${detail.x / 16}%;top:${detail.y / 9}%" data-map-marker data-map-step="${e.step}" data-map-content="${esc(content)}" aria-label="${e.kind === "start" ? "Start" : e.kind === "finish" ? "Current outcome" : e.turn !== undefined ? `Turn ${e.turn}` : `Card ${e.trailStep ?? e.step}`}: ${esc(e.title)}${turns > 1 ? ` · ${turns} turns` : ""}"><span class="map-marker-image"><img src="${image}" alt="">${report?.deaths?.length ? `<img class="map-death-badge" src="${assets.art.tombstoneIcon}" alt="Death">` : ""}</span>${e.kind === "start" || e.kind === "finish" ? `<span class="map-marker-label">${esc(e.title)}</span>` : ""}</button>`;
     })
     .join("");
   const landmarks = [
