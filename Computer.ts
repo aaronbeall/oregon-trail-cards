@@ -316,7 +316,12 @@ export function seededRandom(seed: number) {
   };
 }
 export function simulateGame(
-  options: { seed?: number; players?: number; maxActions?: number } = {},
+  options: {
+    seed?: number;
+    players?: number;
+    maxActions?: number;
+    recordTrace?: boolean;
+  } = {},
 ) {
   const players = options.players ?? 3;
   if (!Number.isInteger(players) || players < 2 || players > 6)
@@ -326,16 +331,20 @@ export function simulateGame(
   game.state.players.forEach((p) => (p.controller = "computer"));
   const trace: { turn: number; player: number; move: ComputerMove }[] = [];
   const limit = options.maxActions ?? 5000;
-  while (game.state.status === "travel" && trace.length < limit) {
+  let actions = 0;
+  while (game.state.status === "travel" && actions < limit) {
     const move = chooseComputerMove(game);
     if (!move) throw new Error(`No AI move in ${game.state.phase}`);
-    trace.push({ turn: game.state.turn, player: game.state.current, move });
+    if (options.recordTrace !== false)
+      trace.push({ turn: game.state.turn, player: game.state.current, move });
+    actions++;
     if (!applyComputerMove(game, move))
       throw new Error(`Illegal AI move: ${JSON.stringify(move)}`);
   }
   return {
     state: game.state,
     trace,
+    actions,
     truncated: game.state.status === "travel",
   };
 }

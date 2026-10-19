@@ -7346,3 +7346,228 @@ body.timeline-compact .trail-afflicted {
   font-size: 13px;
   line-height: 1.6;
 }
+.batch-lab {
+  margin: 0 0 24px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #69745b08;
+}
+.batch-lab .stats-panel-heading > span {
+  font-size: 10px;
+  color: var(--quiet);
+}
+.batch-config {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 14px;
+  margin-top: 15px;
+}
+.batch-config label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--quiet);
+  font-size: 11px;
+}
+.batch-config input,
+.batch-config select {
+  margin: 0;
+  width: 105px;
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: #f1ead7;
+  padding: 7px 9px;
+  color: var(--ink);
+  font-size: 14px;
+}
+.batch-config select {
+  width: 80px;
+}
+.batch-player-range {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+.batch-player-range > span {
+  padding-bottom: 10px;
+  color: var(--quiet);
+}
+.batch-config button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 13px;
+  min-height: 38px;
+  font-size: 12px;
+}
+.batch-config [data-batch-run] {
+  background: var(--sage);
+  border-color: var(--sage);
+  color: var(--paper);
+}
+.batch-config svg {
+  width: 18px;
+  height: 18px;
+}
+.batch-explanation {
+  margin: 14px 0 0;
+  color: var(--quiet);
+  font-size: 11px;
+  line-height: 1.65;
+}
+.batch-error {
+  color: #955d47;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.batch-progress {
+  margin-top: 18px;
+  height: 5px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: #69745b22;
+}
+.batch-progress > span {
+  display: block;
+  height: 100%;
+  background: var(--sage);
+  transition: width 0.15s linear;
+}
+.batch-progress-summary {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--quiet);
+}
+.statistics-source {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 22px;
+}
+.statistics-source button {
+  padding: 9px 14px;
+  box-shadow: none;
+  background: transparent;
+  color: var(--quiet);
+  border: 1px solid var(--line);
+  font-size: 12px;
+}
+.statistics-source button[aria-pressed="true"] {
+  color: var(--ink);
+  border-color: var(--sage);
+  background: #69745b16;
+}
+.batch-waiting {
+  padding: 35px 15px;
+  text-align: center;
+  color: var(--quiet);
+  font:
+    italic 18px Georgia,
+    serif;
+}
+.batch-comparison {
+  margin-bottom: 20px;
+  overflow-x: auto;
+}
+.batch-comparison table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.batch-comparison th,
+.batch-comparison td {
+  padding: 10px 8px;
+  border-bottom: 1px solid #bbb59d66;
+  text-align: right;
+  white-space: nowrap;
+}
+.batch-comparison th:first-child {
+  text-align: left;
+}
+.batch-comparison thead {
+  color: var(--quiet);
+  font-size: 10px;
+}
+@media (max-width: 600px) {
+  .batch-lab {
+    padding: 15px;
+  }
+  .batch-config {
+    gap: 10px;
+  }
+  .batch-config input {
+    width: 85px;
+  }
+  .batch-config select {
+    width: 66px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .batch-progress > span {
+    transition: none;
+  }
+}
+
+.batch-lab-toggle {
+  width: 100%;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  box-shadow: none;
+  text-align: left;
+}
+.batch-lab-toggle:hover {
+  background: transparent;
+  box-shadow: none;
+}
+.batch-lab-toggle .batch-lab-title {
+  font:
+    20px Georgia,
+    serif;
+  color: var(--ink);
+}
+.batch-lab-caption {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.batch-lab-caption svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  transition: transform 0.35s ease;
+}
+.batch-lab-toggle[aria-expanded="true"] .batch-lab-caption svg {
+  transform: rotate(180deg);
+}
+.batch-lab-fold {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 0.35s ease,
+    opacity 0.25s ease;
+}
+.batch-lab-fold.is-expanded {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+.batch-lab-content {
+  min-height: 0;
+  overflow: hidden;
+}
+@media (prefers-reduced-motion: reduce) {
+  .batch-lab-fold,
+  .batch-lab-caption svg {
+    transition: none;
+  }
+}

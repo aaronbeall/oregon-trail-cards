@@ -34,7 +34,19 @@ import { reconcile } from "./Render";
 import { advanceSimulation } from "./Simulation";
 import { supplyEmblem, supplyColor, supplyCollectionEmblem } from "./Supplies";
 import { GameHistory, replayGame, type GameAction } from "./History";
-import { gameStatistics, type Outcome, type JourneyModeFilter } from "./Stats";
+import {
+  gameStatistics,
+  summarizeJourneys,
+  type Outcome,
+  type JourneyModeFilter,
+} from "./Stats";
+import {
+  validateBatchOptions,
+  type BatchOptions,
+  type BatchProgress,
+  type SimulationDataset,
+  type BatchMessage,
+} from "./SimulationBatch";
 import {
   journeyFlow,
   journeyMap,
@@ -157,6 +169,17 @@ const statisticsByMode = new Map<
 >();
 let journeysMode: JourneyModeFilter = "played";
 let statisticsMode: JourneyModeFilter = "all";
+let statisticsSource: "saved" | "batch" = "saved";
+let batchDataset: SimulationDataset | undefined;
+let batchStatistics: ReturnType<typeof summarizeJourneys> | undefined;
+let batchWorker: Worker | undefined;
+let batchRunning = false,
+  batchStopping = false;
+let batchProgress: BatchProgress | undefined;
+let batchError = "";
+let batchExpanded = false;
+let batchConfig = { count: 1000, minPlayers: 2, maxPlayers: 6 };
+
 let statisticsSkipped = 0;
 let journeyScroll = 0;
 let setup = !game.state.started,
@@ -2513,7 +2536,7 @@ function journeyModeFilter(
   scope: "journeys" | "statistics",
   selected: JourneyModeFilter,
 ) {
-  if (!loadStatisticsData().games.some(game => game.simulated)) return "";
+  if (!loadStatisticsData().games.some((game) => game.simulated)) return "";
   return `<div class="journey-mode-filters" role="group" aria-label="${scope === "journeys" ? "Saved journey" : "Statistics"} game types">${(["all", "played", "simulated"] as const).map((mode) => `<button type="button" data-journey-mode="${mode}" data-mode-scope="${scope}" aria-pressed="${selected === mode}">${mode === "all" ? "All" : mode === "played" ? "Played" : "Simulated"}</button>`).join("")}</div>`;
 }
 function journeysScreen() {
@@ -2641,25 +2664,191 @@ app.addEventListener("click", async (event) => {
     setBusy(false);
   }
 });
+function batchLab() {
+  const progress = batchProgress;
+  const hasBatch = batchRunning || !!batchDataset || !!batchProgress;
+  const playerOptions = (selected: number) =>
+    [2, 3, 4, 5, 6]
+      .map(
+        (n) =>
+          `<option value="${n}" ${selected === n ? "selected" : ""}>${n}</option>`,
+      )
+      .join("");
+  return `<section class="batch-lab" aria-labelledby="batch-heading"><button type="button" class="stats-panel-heading batch-lab-toggle" data-batch-toggle aria-expanded="${batchExpanded}" aria-controls="batch-content"><span class="batch-lab-title" id="batch-heading">Simulation lab</span><span class="batch-lab-caption">${batchRunning && progress ? `${progress.attempted.toLocaleString()} / ${progress.requested.toLocaleString()} runs` : "Temporary · never saved"}<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m5 7 5 5 5-5"/></svg></span></button><div class="batch-lab-fold ${batchExpanded ? "is-expanded" : ""}"><div class="batch-lab-content" id="batch-content" ${batchExpanded ? "" : "inert"}><form id="batch-form"><div class="batch-config"><label>Runs<input id="batch-count" type="number" min="1" max="10000" step="1" required value="${batchConfig.count}" ${batchRunning ? "disabled" : ""}></label><div class="batch-player-range"><label>Min players<select id="batch-min-players" ${batchRunning ? "disabled" : ""}>${playerOptions(batchConfig.minPlayers)}</select></label><span aria-hidden="true">–</span><label>Max players<select id="batch-max-players" ${batchRunning ? "disabled" : ""}>${playerOptions(batchConfig.maxPlayers)}</select></label></div><button type="button" data-batch-run ${batchRunning ? "disabled" : ""}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">${computerIcon}</svg>Run simulations</button>${batchRunning ? `<button type="button" data-batch-cancel ${batchStopping ? "disabled" : ""}>${batchStopping ? "Stopping…" : "Stop batch"}</button>` : hasBatch ? '<button type="button" data-batch-clear>Clear dataset</button>' : ""}</div></form><p class="batch-explanation">Player count is picked randomly within your range. Every run shuffles starting hands, supplies and decks, then rolls its own fate.</p>${batchError ? `<p class="batch-error" role="alert">${escape(batchError)}</p>` : ""}${progress ? `<div class="batch-progress" role="progressbar" aria-label="Simulation batch progress" aria-valuemin="0" aria-valuemax="${progress.requested}" aria-valuenow="${progress.attempted}"><span style="width:${(progress.attempted / progress.requested) * 100}%"></span></div><div class="batch-progress-summary" role="status"><strong>${batchRunning ? (batchStopping ? "Stopping" : "Running") : batchDataset ? (batchDataset.cancelled ? "Stopped" : "Complete") : batchError ? "Paused" : "Complete"} · ${progress.attempted.toLocaleString()} / ${progress.requested.toLocaleString()}</strong><span>${progress.wins.toLocaleString()} reached Oregon · ${progress.losses.toLocaleString()} lost${progress.skipped ? ` · ${progress.skipped} action-limit runs excluded` : ""}</span></div>` : ""}</div></div></section>${hasBatch ? `<div class="statistics-source" role="group" aria-label="Statistics dataset"><button type="button" data-statistics-source="saved" aria-pressed="${statisticsSource === "saved"}">Saved journeys</button><button type="button" data-statistics-source="batch" aria-pressed="${statisticsSource === "batch"}">Temporary batch${batchDataset ? ` · ${batchDataset.games.length.toLocaleString()}` : ""}</button></div>` : ""}`;
+}
+function batchPlayerComparison() {
+  if (!batchDataset?.games.length) return "";
+  const groups = [2, 3, 4, 5, 6]
+    .map((players) => ({
+      players,
+      games: batchDataset!.games.filter((g) => g.players.length === players),
+    }))
+    .filter((g) => g.games.length);
+  return `<section class="stats-panel batch-comparison"><div class="stats-panel-heading"><h3>By wagon size</h3><span>Completed runs only</span></div><table><thead><tr><th scope="col">Players</th><th scope="col">Runs</th><th scope="col">Reached Oregon</th><th scope="col">Win rate</th></tr></thead><tbody>${groups
+    .map(({ players, games }) => {
+      const wins = games.filter((g) => g.outcome === "won").length;
+      return `<tr><th scope="row">${players}</th><td>${games.length.toLocaleString()}</td><td>${wins.toLocaleString()}</td><td>${((wins / games.length) * 100).toFixed(1)}%</td></tr>`;
+    })
+    .join("")}</tbody></table></section>`;
+}
+function refreshBatchView() {
+  if (showStatistics && !showJourneys && !selectedJourneyMap) render();
+}
+function startBatch() {
+  const form = app.querySelector<HTMLFormElement>("#batch-form");
+  if (!form || batchRunning || !form.reportValidity()) return;
+  batchConfig = {
+    count: Number(app.querySelector<HTMLInputElement>("#batch-count")!.value),
+    minPlayers: Number(
+      app.querySelector<HTMLSelectElement>("#batch-min-players")!.value,
+    ),
+    maxPlayers: Number(
+      app.querySelector<HTMLSelectElement>("#batch-max-players")!.value,
+    ),
+  };
+  const options: BatchOptions = {
+    ...batchConfig,
+    seed: crypto.getRandomValues(new Uint32Array(1))[0],
+  };
+  try {
+    validateBatchOptions(options);
+  } catch (error) {
+    batchError =
+      error instanceof Error ? error.message : "Check the batch settings.";
+    refreshBatchView();
+    return;
+  }
+  batchError = "";
+  batchDataset = undefined;
+  batchStatistics = undefined;
+  batchRunning = true;
+  batchStopping = false;
+  batchProgress = {
+    attempted: 0,
+    requested: options.count,
+    wins: 0,
+    losses: 0,
+    skipped: 0,
+  };
+  statisticsSource = "batch";
+  statisticsFilter = "all";
+  try {
+    const worker = new Worker(new URL("./BatchWorker.ts", import.meta.url), {
+      type: "module",
+    });
+    batchWorker = worker;
+    const fail = (message: string) => {
+      if (batchWorker !== worker) return;
+      batchError = message;
+      batchRunning = false;
+      batchStopping = false;
+      worker.terminate();
+      batchWorker = undefined;
+      refreshBatchView();
+    };
+    worker.onerror = (event) => {
+      event.preventDefault();
+      fail(event.message || "The simulation worker stopped unexpectedly.");
+    };
+    worker.onmessage = (event: MessageEvent<BatchMessage>) => {
+      if (batchWorker !== worker) return;
+      const message = event.data;
+      if (message.type === "progress") batchProgress = message.progress;
+      else if (message.type === "error") {
+        fail(message.message);
+        return;
+      } else {
+        batchDataset = message.dataset;
+        batchProgress = message.dataset.progress;
+        batchStatistics = summarizeJourneys(message.dataset.games);
+        batchRunning = false;
+        batchStopping = false;
+        worker.terminate();
+        batchWorker = undefined;
+      }
+      refreshBatchView();
+    };
+    worker.postMessage({ type: "start", options });
+  } catch (error) {
+    batchError =
+      error instanceof Error
+        ? error.message
+        : "Could not start the simulation worker.";
+    batchRunning = false;
+    batchStopping = false;
+    batchWorker?.terminate();
+    batchWorker = undefined;
+  }
+  refreshBatchView();
+}
+app.addEventListener("input", (event) => {
+  const target = event.target as HTMLInputElement;
+  if (target.id === "batch-count") batchConfig.count = Number(target.value);
+  if (target.id === "batch-min-players")
+    batchConfig.minPlayers = Number(target.value);
+  if (target.id === "batch-max-players")
+    batchConfig.maxPlayers = Number(target.value);
+});
+app.addEventListener("submit", (event) => {
+  if ((event.target as Element).id === "batch-form") {
+    event.preventDefault();
+    startBatch();
+  }
+});
+app.addEventListener("click", (event) => {
+  const target = (event.target as Element).closest<HTMLButtonElement>(
+    "[data-batch-toggle], [data-batch-run], [data-batch-cancel], [data-batch-clear], [data-statistics-source]",
+  );
+  if (!target || target.disabled) return;
+  event.stopImmediatePropagation();
+  if (target.hasAttribute("data-batch-toggle")) {
+    batchExpanded = !batchExpanded;
+    refreshBatchView();
+  } else if (target.hasAttribute("data-batch-run")) startBatch();
+  else if (target.hasAttribute("data-batch-cancel")) {
+    batchStopping = true;
+    batchWorker?.postMessage({ type: "cancel" });
+    refreshBatchView();
+  } else if (target.hasAttribute("data-batch-clear")) {
+    batchDataset = undefined;
+    batchStatistics = undefined;
+    batchProgress = undefined;
+    batchError = "";
+    statisticsSource = "saved";
+    statisticsFilter = "all";
+    refreshBatchView();
+  } else {
+    statisticsSource =
+      target.dataset.statisticsSource === "batch" ? "batch" : "saved";
+    statisticsFilter = "all";
+    refreshBatchView();
+  }
+});
+if (import.meta.hot) import.meta.hot.dispose(() => batchWorker?.terminate());
 function statisticsScreen() {
-  const data = loadStatisticsData(statisticsMode);
+  const temporary = statisticsSource === "batch";
+  const data = temporary
+    ? (batchStatistics ?? summarizeJourneys([]))
+    : loadStatisticsData(statisticsMode);
   const total = data.games.length;
   const percent = (rate: number | null) =>
     rate === null ? "—" : `${Math.round(rate * 100)}%`;
   const labels = Object.keys(outcomeNames) as Outcome[];
   const circumference = 2 * Math.PI * 48;
   const visible = data.games
-    .map((record) => ({
+    .map((record, index) => ({
       ...record,
-      number:
-        (history?.archive.games.findIndex((game) => game.id === record.id) ??
-          -1) + 1,
+      number: temporary
+        ? index + 1
+        : (history?.archive.games.findIndex((game) => game.id === record.id) ??
+            -1) + 1,
     }))
     .filter(
       (record) =>
         statisticsFilter === "all" || record.outcome === statisticsFilter,
     )
     .reverse();
+  const displayed = temporary ? visible.slice(0, 100) : visible;
   const maxDistance = Math.max(1, ...data.distances.map((bin) => bin.count));
   const maxDeaths = Math.max(1, ...data.deaths.map((cause) => cause.count));
   const date = (iso: string) => {
@@ -2672,28 +2861,30 @@ function statisticsScreen() {
         })
       : "Date unavailable";
   };
-  return `<header><div><p class="eyebrow">The wagon’s ledger</p><h1>Journey <i>statistics</i></h1></div><div class="header-actions">${button("stats-back", setup ? "← Back to wagon" : "← Back to journey")}${navigationIcons()}</div></header><main class="stats-screen"><div class="stats-intro"><h2 id="stats-heading" tabindex="-1">Every road leaves a story.</h2><p>${statisticsMode === "all" ? "All" : statisticsMode === "played" ? "Played" : "Simulated"} journeys saved on this device.${statisticsSkipped ? ` ${statisticsSkipped} unreadable record${statisticsSkipped === 1 ? " is" : "s are"} excluded.` : ""}</p></div>${journeyModeFilter("statistics", statisticsMode)}${
-    !total
-      ? `<section class="stats-empty"><img src="${art.progressWagon}" alt=""><h3>${statisticsMode === "all" ? "A blank page, for now." : `No ${statisticsMode} journeys yet.`}</h3><p>${statisticsMode === "all" ? "Start a journey and its story will appear here—even before you reach the end." : "Choose another filter to explore the journeys saved here."}</p>${button("stats-back", "Back to the wagon →")}</section>`
-      : `${journeyFlow(data.games, statisticsFilter)}<section class="stats-metrics" aria-label="Completed journey averages"><div><strong>${percent(data.survivalRate)}</strong><span>Traveller survival</span><small>${data.survivors} of ${data.travellers} travellers in completed games</small></div><div><strong>${data.averageDistance === null ? "—" : Math.round(data.averageDistance)}</strong><span>Average trail cards</span><small>Out of 50 · completed games</small></div><div><strong>${data.averageDays === null ? "—" : Math.round(data.averageDays)}</strong><span>Average days on the trail</span><small>Completed games</small></div></section><div class="stats-charts"><section class="stats-panel"><div class="stats-panel-heading"><h3>How far the wagon gets</h3></div><p class="stats-chart-note">Trail cards reached · ${statisticsMode === "all" ? "all saved games" : `${statisticsMode} games`}</p><div class="stats-distance-chart" role="img" aria-label="${data.distances.map((bin) => `${bin.label}: ${bin.count} games`).join(", ")}">${data.distances.map((bin, index) => `<div><strong>${bin.count}</strong><div class="stats-bin-track"><span class="${index === 5 ? "stats-tone-won" : "stats-tone-travel"}" style="height:${(bin.count / maxDistance) * 100}%"></span></div><small>${bin.label}</small></div>`).join("")}</div></section><section class="stats-panel"><div class="stats-panel-heading"><h3>What the trail takes</h3></div><p class="stats-chart-note">Traveller deaths · ${statisticsMode === "all" ? "all saved games" : `${statisticsMode} games`}</p>${
-          data.deaths.length
-            ? `<div class="stats-death-chart">${data.deaths
-                .map(({ cause, count }) => {
-                  const kind = (Object.keys(titles) as Calamity[]).find(
-                    (kind) => titles[kind] === cause,
-                  );
-                  const image = kind
-                    ? calamityArt[kind]
-                    : cause === "Drowning"
-                      ? riverArt.drowning
-                      : art.tombstoneIcon;
-                  return `<div class="stats-death-row"><img src="${image}" alt=""><div><div class="stats-death-label"><span>${escape(cause)}</span><strong>${count}</strong></div><div class="stats-death-track"><span style="width:${(count / maxDeaths) * 100}%"></span></div></div></div>`;
-                })
-                .join("")}</div>`
-            : '<div class="stats-no-deaths"><img src="' +
-              art.progressWagon +
-              '" alt=""><p>No travellers lost so far.</p></div>'
-        }</section></div><section class="stats-history"><div class="stats-panel-heading"><h3>The journey ledger</h3></div><div class="stats-filters" role="group" aria-label="Filter saved journeys">${(["all", ...labels] as const).map((outcome) => `<button data-stats-filter="${outcome}" aria-pressed="${statisticsFilter === outcome}">${outcome === "all" ? "All journeys" : outcomeNames[outcome]} <span>${outcome === "all" ? total : data.outcomes[outcome]}</span></button>`).join("")}</div><div class="stats-records">${visible.length ? visible.map((record) => `<article class="stats-record" data-ui-key="stats-record-${escape(record.id)}"><div class="stats-record-title"><h4>Journey ${record.number}</h4>${record.simulated ? '<span class="journey-mode-tag">Simulated</span>' : ""}<span class="stats-outcome-tag stats-tag-${record.outcome}">${outcomeNames[record.outcome]}</span></div><div class="stats-record-date">${date(record.startedAt)}${record.partial ? " · Partial turn history" : ""}</div><div class="stats-record-progress"><span style="width:${record.distance * 2}%" class="stats-tone-${record.outcome}"></span></div><div class="stats-record-totals"><span>${record.distance} / 50 cards</span><span>${record.days} day${record.days === 1 ? "" : "s"}</span><span>${record.survivors} / ${record.players.length} alive</span></div><div class="stats-record-party">${record.players.map((player, index) => `<span title="${escape(player.name)}${!player.alive ? ` — ${escape(player.deathCause ?? "Died on the trail")}` : ""}" aria-label="${escape(player.name)}${!player.alive ? ", deceased" : ""}">${player.alive ? portraitImage(player.portrait ?? index % 6) : `<img class="stats-grave" src="${art.tombstoneIcon}" alt="">`}</span>`).join("")}</div><button class="stats-map-button" data-view-journey="${escape(record.id)}">View trail map →</button></article>`).join("") : '<p class="stats-no-records">No journeys in this group yet.</p>'}</div></section>`
+  return `<header><div><p class="eyebrow">The wagon’s ledger</p><h1>Journey <i>statistics</i></h1></div><div class="header-actions">${button("stats-back", setup ? "← Back to wagon" : "← Back to journey")}${navigationIcons()}</div></header><main class="stats-screen"><div class="stats-intro"><h2 id="stats-heading" tabindex="-1">Every road leaves a story.</h2><p>${temporary ? "Temporary batch analysis. These runs stay in memory and disappear when you reload or close this page." : `${statisticsMode === "all" ? "All" : statisticsMode === "played" ? "Played" : "Simulated"} journeys saved on this device.${statisticsSkipped ? ` ${statisticsSkipped} unreadable record${statisticsSkipped === 1 ? " is" : "s are"} excluded.` : ""}`}</p></div>${batchLab()}${temporary ? "" : journeyModeFilter("statistics", statisticsMode)}${
+    temporary && !total
+      ? `<section class="batch-waiting"><p>${batchRunning ? "The clankers are gathering evidence…" : "No completed runs in this dataset. Start a batch above."}</p></section>`
+      : !total
+        ? `<section class="stats-empty"><img src="${art.progressWagon}" alt=""><h3>${statisticsMode === "all" ? "A blank page, for now." : `No ${statisticsMode} journeys yet.`}</h3><p>${statisticsMode === "all" ? "Start a journey and its story will appear here—even before you reach the end." : "Choose another filter to explore the journeys saved here."}</p>${button("stats-back", "Back to the wagon →")}</section>`
+        : `${temporary ? batchPlayerComparison() : ""}${journeyFlow(data.games, statisticsFilter)}<section class="stats-metrics" aria-label="Completed journey averages"><div><strong>${percent(data.survivalRate)}</strong><span>Traveller survival</span><small>${data.survivors} of ${data.travellers} travellers in completed games</small></div><div><strong>${data.averageDistance === null ? "—" : Math.round(data.averageDistance)}</strong><span>Average trail cards</span><small>Out of 50 · completed games</small></div><div><strong>${data.averageDays === null ? "—" : Math.round(data.averageDays)}</strong><span>Average days on the trail</span><small>Completed games</small></div></section><div class="stats-charts"><section class="stats-panel"><div class="stats-panel-heading"><h3>How far the wagon gets</h3></div><p class="stats-chart-note">Trail cards reached · ${temporary ? "temporary batch" : statisticsMode === "all" ? "all saved games" : `${statisticsMode} games`}</p><div class="stats-distance-chart" role="img" aria-label="${data.distances.map((bin) => `${bin.label}: ${bin.count} games`).join(", ")}">${data.distances.map((bin, index) => `<div><strong>${bin.count}</strong><div class="stats-bin-track"><span class="${index === 5 ? "stats-tone-won" : "stats-tone-travel"}" style="height:${(bin.count / maxDistance) * 100}%"></span></div><small>${bin.label}</small></div>`).join("")}</div></section><section class="stats-panel"><div class="stats-panel-heading"><h3>What the trail takes</h3></div><p class="stats-chart-note">Traveller deaths · ${temporary ? "temporary batch" : statisticsMode === "all" ? "all saved games" : `${statisticsMode} games`}</p>${
+            data.deaths.length
+              ? `<div class="stats-death-chart">${data.deaths
+                  .map(({ cause, count }) => {
+                    const kind = (Object.keys(titles) as Calamity[]).find(
+                      (kind) => titles[kind] === cause,
+                    );
+                    const image = kind
+                      ? calamityArt[kind]
+                      : cause === "Drowning"
+                        ? riverArt.drowning
+                        : art.tombstoneIcon;
+                    return `<div class="stats-death-row"><img src="${image}" alt=""><div><div class="stats-death-label"><span>${escape(cause)}</span><strong>${count}</strong></div><div class="stats-death-track"><span style="width:${(count / maxDeaths) * 100}%"></span></div></div></div>`;
+                  })
+                  .join("")}</div>`
+              : '<div class="stats-no-deaths"><img src="' +
+                art.progressWagon +
+                '" alt=""><p>No travellers lost so far.</p></div>'
+          }</section></div><section class="stats-history"><div class="stats-panel-heading"><h3>${temporary ? "Batch runs" : "The journey ledger"}</h3>${temporary && visible.length > displayed.length ? `<span>Showing ${displayed.length} of ${visible.length.toLocaleString()} matching runs</span>` : ""}</div><div class="stats-filters" role="group" aria-label="${temporary ? "Filter batch outcomes" : "Filter saved journeys"}">${(["all", ...labels] as const).map((outcome) => `<button data-stats-filter="${outcome}" aria-pressed="${statisticsFilter === outcome}">${outcome === "all" ? (temporary ? "All runs" : "All journeys") : outcomeNames[outcome]} <span>${outcome === "all" ? total : data.outcomes[outcome]}</span></button>`).join("")}</div><div class="stats-records">${displayed.length ? displayed.map((record) => `<article class="stats-record" data-ui-key="stats-record-${escape(record.id)}"><div class="stats-record-title"><h4>${temporary ? "Run" : "Journey"} ${record.number}</h4>${record.simulated ? '<span class="journey-mode-tag">Simulated</span>' : ""}<span class="stats-outcome-tag stats-tag-${record.outcome}">${outcomeNames[record.outcome]}</span></div><div class="stats-record-date">${date(record.startedAt)}${record.partial ? " · Partial turn history" : ""}</div><div class="stats-record-progress"><span style="width:${record.distance * 2}%" class="stats-tone-${record.outcome}"></span></div><div class="stats-record-totals"><span>${record.distance} / 50 cards</span><span>${record.days} day${record.days === 1 ? "" : "s"}</span><span>${record.survivors} / ${record.players.length} alive</span></div><div class="stats-record-party">${record.players.map((player, index) => `<span title="${escape(player.name)}${!player.alive ? ` — ${escape(player.deathCause ?? "Died on the trail")}` : ""}" aria-label="${escape(player.name)}${!player.alive ? ", deceased" : ""}">${player.alive ? portraitImage(player.portrait ?? index % 6) : `<img class="stats-grave" src="${art.tombstoneIcon}" alt="">`}</span>`).join("")}</div>${temporary ? "" : `<button class="stats-map-button" data-view-journey="${escape(record.id)}">View trail map →</button>`}</article>`).join("") : '<p class="stats-no-records">No journeys in this group yet.</p>'}</div></section>`
   }</main>`;
 }
 app.addEventListener("click", async (event) => {

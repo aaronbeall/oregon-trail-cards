@@ -30,3 +30,5 @@ npm run simulate -- --games 100 --players 3 --seed 1
 ```
 
 See [computer strategy and automation](docs/computer-players.md) for decision priorities, controls, limitations and the reusable headless API.
+
+Statistics also includes a **Simulation lab**: generate a temporary batch with a chosen run count and player-count range, watch progress, and compare outcomes by party size. These analysis runs stay in memory, never enter saved history, and disappear when the page reloads.

@@ -37,6 +37,11 @@ export function gameStatistics(
       survivors: state.players.filter((player) => player.alive).length,
       partial: !record.completeFromStart,
     }));
+  return summarizeJourneys(games);
+}
+
+/** Aggregate standalone summaries without requiring stored game histories. */
+export function summarizeJourneys(games: JourneySummary[]) {
   const outcomes: Record<Outcome, number> = {
     won: 0,
     lost: 0,

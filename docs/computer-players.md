@@ -66,3 +66,13 @@ The browser advances six decisions per small batch so progress can paint and the
 Simulated journeys have `mode: "simulation"` in saved state and `simulated: true` on their archive record. Journey selection, statistics entries and the atlas display a **Simulated** badge. Saved journeys default to **Played**, hiding simulations. Statistics default to **All**, including simulations. Both screens offer independent **All / Played / Simulated** filters; the statistics filter applies to all charts, averages, counts and ledger entries. Played includes normal interactive journeys even when every traveller is a computer. Regular games are not marked as simulations, even if every traveller is a computer.
 
 Reloading an unfinished simulation resumes it in the simulation view. A 5,000-action safety limit pauses a run without recording a false loss; it can be continued. Reopening a completed simulated journey shows its results instead of the interactive game UI. Browser runs use ordinary game randomness; use the seeded headless runner for reproducible experiments.
+
+## Temporary statistical batches
+
+The **Simulation lab** in Statistics runs 1–10,000 random games as a disposable dataset. Choose the run count and minimum/maximum party size (2–6). Equal limits fix the party size; otherwise each run picks uniformly from the inclusive range. Starting hands, supplies, trail/calamity deck order and dice already vary randomly. Starting supply **quantities** follow the normal party-size rules; the AI policy and other game rules stay fixed.
+
+A background Web Worker runs the shared headless brain, reports progress and allows **Stop batch** between games. Completed games remain available if stopped early. Action-limit runs are counted separately and excluded from win/loss analysis. The page remains usable during the batch, including switching back to saved statistics.
+
+**Saved journeys / Temporary batch** switches between independent datasets. Temporary runs do not enter the journey archive, current save, local storage or saved-game totals. They disappear on reload/tab closure or **Clear dataset**. Run summaries retain only the fields needed for analysis, rather than full action traces, hands or inventories. They have no individual history/map links. The ledger shows at most 100 matching runs while every completed run contributes to charts, averages and the comparison by party size.
+
+The standalone `runSimulationBatch` function in `SimulationBatch.ts` accepts `{ count, minPlayers, maxPlayers, seed }`, plus progress and cancellation callbacks. Its seed reproduces party sizes and individual runs. It does not access browser storage or interactive game state.
