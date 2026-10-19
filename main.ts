@@ -203,6 +203,35 @@ window.addEventListener(
 updateHeaderSize();
 let stickyFrame = 0;
 let stickyObserved: Element[] = [];
+const activePlayerScroll = new WeakMap<Element, string>();
+function scrollToActivePlayer(row: HTMLElement | null) {
+  if (!row) return;
+  if (!document.body.classList.contains("players-compact")) {
+    activePlayerScroll.delete(row);
+    return;
+  }
+  const card = row.querySelector<HTMLElement>(".player.current");
+  if (!card || Number(card.dataset.playerIndex) !== game.state.current) return;
+  const key = `${game.state.turn}:${card.dataset.playerIndex}`;
+  if (activePlayerScroll.get(row) === key) return;
+  activePlayerScroll.set(row, key);
+  const view = row.getBoundingClientRect(),
+    target = card.getBoundingClientRect();
+  if (target.left >= view.left + 4 && target.right <= view.right - 4) return;
+  const left = Math.max(
+    0,
+    Math.min(
+      row.scrollWidth - row.clientWidth,
+      row.scrollLeft +
+        target.left -
+        view.left -
+        (row.clientWidth - target.width) / 2,
+    ),
+  );
+  gsap.killTweensOf(row, "scrollLeft");
+  if (reducedMotion.matches) row.scrollLeft = left;
+  else gsap.to(row, { scrollLeft: left, duration: 0.35, ease: "power2.out" });
+}
 const stickySizes = new ResizeObserver(() => scheduleStickyPanels());
 function scheduleStickyPanels() {
   if (stickyFrame) return;
@@ -321,6 +350,7 @@ function scheduleStickyPanels() {
         : 0;
     setSize("--sticky-scene-height", sceneHeight);
     toggle("timeline", trail);
+    scrollToActivePlayer(players);
     const tab = trail?.querySelector<HTMLButtonElement>(".top-expand-tab");
     if (tab) {
       const label = topExpandedManually
@@ -404,6 +434,39 @@ async function scrollUpToState(target: Element | null | undefined) {
     target.getBoundingClientRect().top + window.scrollY - 24,
   );
   // Keep the user's view when the destination is already below the viewport top.
+  if (top >= window.scrollY - 1) return;
+  if (reducedMotion.matches) window.scrollTo({ top, behavior: "instant" });
+  else
+    await playTimeline((tl) =>
+      tl.to(document.scrollingElement, {
+        scrollTop: top,
+        duration: 0.3,
+        ease: "power2.inOut",
+      }),
+    );
+}
+async function scrollUpToTurn() {
+  const turn = app.querySelector<HTMLElement>(".turn-decision");
+  if (!turn || window.scrollY < 1) return;
+  // The turn must land below the entire sticky dock, including a manually
+  // expanded scene, without pulling the page downward when already in view.
+  const dockHeight = [
+    "header",
+    ".players",
+    ".trail-area",
+    ...(topExpandedManually ? [".journey"] : []),
+  ].reduce(
+    (height, selector) =>
+      height +
+      (app
+        .querySelector<HTMLElement>(`:scope > ${selector}`)
+        ?.getBoundingClientRect().height ?? 0),
+    0,
+  );
+  const top = Math.max(
+    0,
+    turn.getBoundingClientRect().top + window.scrollY - dockHeight - 16,
+  );
   if (top >= window.scrollY - 1) return;
   if (reducedMotion.matches) window.scrollTo({ top, behavior: "instant" });
   else
@@ -891,7 +954,7 @@ function playerCard(index: number, turnPlayer = game.state.current) {
   const conditions = s.hazards.filter(
     (h) => h.owner === index && !wagonKinds.has(h.kind),
   );
-  return `<div data-ui-key="player-${index}" data-player-preview="summary" data-player-index="${index}" tabindex="0" aria-label="${escape(p.name)}: full player details" class="player ${index === turnPlayer ? "current" : ""} ${!p.alive ? "dead" : conditions.length ? `unwell severity-${playerSeverity(conditions)}` : ""}"><div class="player-heading">${portrait(index)}<div><strong>${escape(p.name)} ${!p.alive ? "†" : index === turnPlayer ? '<span class="player-turn-tag">Turn</span>' : ""}</strong>${p.birthday ? `<small class="player-birthday">Born ${calendarDate(p.birthday)}</small>` : ""}</div></div>${p.alive ? `${playerInventory(index)}${compactPlayerInventory(index)}` : `<small class="player-epitaph">${escape(p.epitaph)}</small>`}<div class="player-state" aria-label="${escape(p.name)}’s condition">${(p.alive ? conditions : []).map((h) => `<button class="condition-status severity-${hazardSeverity(h)}" style="--condition-art:url('${calamityArt[h.kind]}')" data-ui-key="condition-${h.id}" data-player-preview="condition" data-player-index="${index}" data-hazard-id="${h.id}" aria-label="${escape(conditionTitle(h.kind, index))}: ${severityLabels[hazardSeverity(h)]}${conditionTiming(h) ? `, ${conditionTiming(h)}` : ""}: condition and remedies"><span>${titles[h.kind]}</span><span class="condition-severity">${severityLabels[hazardSeverity(h)]}</span>${conditionTiming(h) ? `<span class="healing-countdown">${conditionTiming(h)}</span>` : ""}${compactCondition(h)}</button>`).join("")}${p.alive && !conditions.length ? '<span class="condition-clear">In good health</span>' : ""}</div></div>`;
+  return `<div data-ui-key="player-${index}" data-player-preview="summary" data-player-index="${index}" tabindex="0" aria-label="${escape(p.name)}${index === turnPlayer ? ", current turn" : ""}: full player details" class="player ${index === turnPlayer ? "current" : ""} ${!p.alive ? "dead" : conditions.length ? `unwell severity-${playerSeverity(conditions)}` : ""}">${index === turnPlayer && p.alive ? '<span class="compact-active-badge" aria-hidden="true">Turn</span>' : ""}<div class="player-heading">${portrait(index)}<div><strong>${escape(p.name)} ${!p.alive ? "†" : index === turnPlayer ? '<span class="player-turn-tag">Turn</span>' : ""}</strong>${p.birthday ? `<small class="player-birthday">Born ${calendarDate(p.birthday)}</small>` : ""}</div></div>${p.alive ? `${playerInventory(index)}${compactPlayerInventory(index)}` : `<small class="player-epitaph">${escape(p.epitaph)}</small>`}<div class="player-state" aria-label="${escape(p.name)}’s condition">${(p.alive ? conditions : []).map((h) => `<button class="condition-status severity-${hazardSeverity(h)}" style="--condition-art:url('${calamityArt[h.kind]}')" data-ui-key="condition-${h.id}" data-player-preview="condition" data-player-index="${index}" data-hazard-id="${h.id}" aria-label="${escape(conditionTitle(h.kind, index))}: ${severityLabels[hazardSeverity(h)]}${conditionTiming(h) ? `, ${conditionTiming(h)}` : ""}: condition and remedies"><span>${titles[h.kind]}</span><span class="condition-severity">${severityLabels[hazardSeverity(h)]}</span>${conditionTiming(h) ? `<span class="healing-countdown">${conditionTiming(h)}</span>` : ""}${compactCondition(h)}</button>`).join("")}${p.alive && !conditions.length ? '<span class="condition-clear">In good health</span>' : ""}</div></div>`;
 }
 function refreshPlayerSummaries(turnPlayer: number) {
   const summaries = app.querySelector(".players");
@@ -901,6 +964,7 @@ function refreshPlayerSummaries(turnPlayer: number) {
     .map((_, index) => playerCard(index, turnPlayer))
     .join("");
   reconcile(summaries, template.content);
+  scheduleStickyPanels();
 }
 function reservePlayedTrailTile(played: TrailCard, animate: boolean) {
   const strip = app.querySelector(".trail-strip");
@@ -1374,7 +1438,7 @@ function decision() {
         );
     }
   }
-  return `<section class="decision turn-decision" aria-live="polite"><p class="eyebrow">${s.status === "travel" ? `Current turn · ${s.turn}` : "Journey’s end"}</p><div class="turn-header" data-turn-player="${s.phase === "legacy" ? s.deaths[0] : s.current}"><div class="decision-heading">${portraitImage(s.players[s.phase === "legacy" ? s.deaths[0] : s.current].portrait ?? 0, true)}<h2>${s.phase === "legacy" ? `Farewell, ${escape(s.players[s.deaths[0]].name)}.` : `${escape(p.name)}’s turn`}</h2></div>${s.status === "travel" && s.phase !== "legacy" ? playerSupplies() : ""}</div><div class="turn-state-window"><div class="turn-state turn-options" data-ui-key="turn-state" data-phase="${s.phase}">${options}</div></div>${s.status === "travel" && s.phase !== "legacy" ? `<div class="turn-map-preview">${renderJourneyMapPreview(s)}</div>` : ""}</section>`;
+  return `<section class="decision turn-decision" aria-live="polite"><p class="eyebrow">${s.status === "travel" ? `Day ${s.turn}` : "Journey’s end"}</p><div class="turn-header" data-turn-player="${s.phase === "legacy" ? s.deaths[0] : s.current}"><div class="decision-heading">${portraitImage(s.players[s.phase === "legacy" ? s.deaths[0] : s.current].portrait ?? 0, true)}<h2>${s.phase === "legacy" ? `Farewell, ${escape(s.players[s.deaths[0]].name)}.` : `${escape(p.name)}’s turn`}</h2></div>${s.status === "travel" && s.phase !== "legacy" ? playerSupplies() : ""}</div><div class="turn-state-window"><div class="turn-state turn-options" data-ui-key="turn-state" data-phase="${s.phase}">${options}</div></div>${s.status === "travel" && s.phase !== "legacy" ? `<div class="turn-map-preview">${renderJourneyMapPreview(s)}</div>` : ""}</section>`;
 }
 function reportFor(c: TrailCard) {
   return c.journeyStep ? game.state.trailReports?.[c.journeyStep] : undefined;
@@ -1687,8 +1751,12 @@ function trailCaption(c: TrailCard) {
 function lostSupplyEmblem(kind: Supply) {
   return `<span class="lost-supply">${supplyEmblem(kind)}</span>`;
 }
-function timelineSupplyEmblem(kind: Supply, change: "gain" | "loss") {
-  return `<span class="timeline-supply-change ${change}">${supplyEmblem(kind)}<span class="supply-change-bubble" aria-hidden="true">${change === "gain" ? "+" : "−"}</span></span>`;
+function timelineSupplyEmblem(
+  kind: Supply,
+  change: "gain" | "loss",
+  quantity = 1,
+) {
+  return `<span class="timeline-supply-change ${change}">${supplyEmblem(kind)}<span class="supply-change-bubble" aria-hidden="true">${change === "gain" ? "+" : "−"}${quantity}</span></span>`;
 }
 function trailOutcomes(reports: TrailReport[]) {
   const losses = reports.reduce(
@@ -1767,7 +1835,7 @@ function trailOutcomes(reports: TrailReport[]) {
       ([kind, count]) =>
         items.push({
           owner: report.gainOwner ?? report.owner,
-          icon: timelineSupplyEmblem(kind, "gain"),
+          icon: timelineSupplyEmblem(kind, "gain", count),
           description: `${report.gainOwner !== undefined ? game.state.players[report.gainOwner].name : "The party"} gains ${count} ${names[kind].toLowerCase()}`,
         }),
     ),
@@ -1904,6 +1972,11 @@ function playerPreviewContent(row: HTMLElement) {
     : heading;
 }
 function showOutcomeTooltip(row: HTMLElement) {
+  if (
+    document.body.classList.contains("timeline-compact") &&
+    row.matches(".trail-outcome, .trail-afflicted")
+  )
+    row = row.closest<HTMLElement>(".trail-piece") ?? row;
   if (tooltipOwner !== row) tooltipPinned = false;
   const isIcon =
     row.classList.contains("trail-outcome") ||
@@ -4179,6 +4252,7 @@ app.addEventListener("click", async (event) => {
     }
     const changedSections = render();
     if (shouldScrollTrail) await scrollTrailToEnd();
+    if (turnChanged && game.state.status === "travel") await scrollUpToTurn();
     const stateIncoming = stateChanged
       ? app.querySelector(stateSelector)
       : null;

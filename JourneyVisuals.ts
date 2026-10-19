@@ -748,19 +748,54 @@ function turnHistory(actions: MapAction[], state: Journey, assets: MapAssets) {
   }
   return `<div class="map-turn-history">${groups
     .map((group) => {
-      const estateOnly = group.actions.every((a) => a.inheritance);
-      const heading = estateOnly
-        ? ""
-        : `<div class="map-turn-heading">${assets.portraits[group.player] ?? ""}<div><strong><span class="map-turn-badge">Turn ${group.turn}</span> ${esc(state.players[group.player]?.name ?? "Traveller")}</strong><small>${calendarDate(journeyDate(group.turn - 1, state.startDate))}</small></div></div>`;
-      return `<section class="map-turn">${heading}${group.actions
+      const heading = `<div class="map-turn-heading"><time datetime="${journeyDate(group.turn - 1, state.startDate)}">${calendarDate(journeyDate(group.turn - 1, state.startDate))}</time><span class="map-turn-badge">Day ${group.turn}</span></div>`;
+      const attribution = `<div class="map-action-player">${assets.portraits[group.player] ?? ""}<strong>${esc(state.players[group.player]?.name ?? "Traveller")}</strong></div>`;
+      return `<section class="map-turn">${heading}${attribution}${group.actions
         .map((a) =>
           a.inheritance
-            ? inheritanceHistory(a.inheritance, state, assets)
-            : `<div class="map-turn-action tone-${mapActionTone(a)}"><div class="map-event-heading"><span class="map-event-visual">${mapEventVisual(a, assets)}</span><strong>${esc(a.action)}${a.rolls.length ? ` · rolled ${a.rolls.join(", ")}` : ""}</strong></div>${a.context ? `<p class="map-event-context">${esc(a.context)}</p>` : ""}${a.text.map((t) => `<p>${esc(t)}</p>`).join("")}${a.supplies.length ? `<div class="map-supplies">${a.supplies.map((s) => `<span class="map-supply-change">${mapSupplyChange(s.kind, s.delta)}<small>${esc(state.players[s.player]?.name ?? "Traveller")}</small></span>`).join("")}</div>` : ""}${(a.deaths ?? []).map((index) => mapGravestone(index, state, assets)).join("")}</div>`,
+            ? `<div class="map-timeline-entry">${inheritanceHistory(a.inheritance, state, assets)}</div>`
+            : `<div class="map-turn-action map-timeline-entry tone-${mapActionTone(a)}"><div class="map-event-heading"><span class="map-event-visual">${mapEventVisual(a, assets)}</span><strong>${esc(a.action)}${a.rolls.length ? ` · rolled ${a.rolls.join(", ")}` : ""}</strong></div>${a.context ? `<p class="map-event-context">${esc(a.context)}</p>` : ""}${a.text
+                .filter(
+                  (t) =>
+                    !(
+                      a.type === "play" &&
+                      a.card &&
+                      t ===
+                        `${state.players[a.player]?.name} laid ${label(a.card).toLowerCase()}.`
+                    ),
+                )
+                .map((t) => `<p>${esc(t)}</p>`)
+                .join(
+                  "",
+                )}${a.supplies.length ? `<div class="map-supplies">${a.supplies.map((s) => `<span class="map-supply-change">${mapSupplyChange(s.kind, s.delta)}${s.player !== group.player ? `<small>${esc(state.players[s.player]?.name ?? "Traveller")}</small>` : ""}</span>`).join("")}</div>` : ""}${(a.deaths ?? []).map((index) => mapGravestone(index, state, assets)).join("")}</div>`,
         )
         .join("")}</section>`;
     })
     .join("")}</div>`;
+}
+type MapStopKind = "stopped" | "challenge" | "settlement" | "travel";
+function mapStopKind(event: MapEvent): MapStopKind {
+  const kind = event.report?.calamity ?? event.kind;
+  if (["axle", "tongue", "wheel", "oxen", "repair"].includes(kind))
+    return "stopped";
+  if (["town", "fort"].includes(event.card?.type ?? kind)) return "settlement";
+  if (
+    kind === "river" ||
+    kind === "calamity" ||
+    kind in titles ||
+    event.card?.type === "calamity"
+  )
+    return "challenge";
+  return "travel";
+}
+function mapStopSymbol(kind: MapStopKind) {
+  if (kind === "stopped")
+    return '<path d="M-4-7H4L7-4V4L4 7H-4L-7 4V-4Z"/><path class="map-stop-glyph" d="M-2-3V3M2-3V3"/>';
+  if (kind === "challenge")
+    return '<path d="M0-8 8 0 0 8-8 0Z"/><path class="map-stop-glyph" d="M0-3V1M0 4v.1"/>';
+  if (kind === "settlement")
+    return '<path d="M-7-1 0-7 7-1V7H-7Z"/><path class="map-stop-glyph" d="M-2 7V1H2V7"/>';
+  return '<circle r="5.5"/>';
 }
 function mapOutcome(
   state: Journey,
@@ -821,7 +856,7 @@ export function journeyMap(
         e.kind === "start" ||
         (state.status === "travel" && i === events.length - 1);
       trailAnchors.push(
-        `${offset ? `<line class="map-event-connector" x1="${point.x}" y1="${point.y}" x2="${detail.x}" y2="${detail.y}"/>` : ""}${e.kind !== "finish" ? `<circle class="map-event-dot" data-map-dot="${e.step}" cx="${point.x}" cy="${point.y}" r="${endpointDot ? 8 : 5.5}"/>` : ""}`,
+        `${offset ? `<line class="map-event-connector" x1="${point.x}" y1="${point.y}" x2="${detail.x}" y2="${detail.y}"/>` : ""}${e.kind !== "finish" ? `<g class="map-event-dot map-stop-${mapStopKind(e)}" data-map-dot="${e.step}" transform="translate(${point.x} ${point.y})">${endpointDot && (e.kind === "start" || mapStopKind(e) === "travel") ? `<circle r="8"/>` : mapStopSymbol(mapStopKind(e))}</g>` : ""}`,
       );
       const report = e.report;
       const image =
@@ -884,7 +919,21 @@ export function journeyMap(
     })
     .join(
       "",
-    )}<text class="map-geographic-label" x="200" y="180">OREGON COUNTRY</text><text class="map-geographic-label" x="1120" y="700">GREAT PLAINS</text><text class="map-geographic-label" x="810" y="255" transform="rotate(-20 810 255)">ROCKY MOUNTAINS</text><text class="map-geographic-label" x="60" y="670" transform="rotate(-90 60 670)">PACIFIC OCEAN</text><g class="map-compass" transform="translate(1450 120)"><path d="M0-35 9 0 0 35-9 0Z"/><path d="M-25 0H25"/><text y="-44" text-anchor="middle">N</text></g>${trailAnchors.join("")}${mapOutcome(state, routePoint(state.count / 50), assets)}</svg>${state.status !== "won" ? '<span class="map-destination-label" style="left:10%;top:24%">Oregon City<br><small>Willamette Valley</small></span>' : ""}${markers}</div></div></div><div class="map-key"><span><i class="map-key-complete"></i>Travelled</span><span><i class="map-key-remaining"></i>Ahead</span><small>Drag to pan · scroll or pinch to zoom · point to an event for its story</small></div></section>`;
+    )}<text class="map-geographic-label" x="200" y="180">OREGON COUNTRY</text><text class="map-geographic-label" x="1120" y="700">GREAT PLAINS</text><text class="map-geographic-label" x="810" y="255" transform="rotate(-20 810 255)">ROCKY MOUNTAINS</text><text class="map-geographic-label" x="60" y="670" transform="rotate(-90 60 670)">PACIFIC OCEAN</text><g class="map-compass" transform="translate(1450 120)"><path d="M0-35 9 0 0 35-9 0Z"/><path d="M-25 0H25"/><text y="-44" text-anchor="middle">N</text></g>${trailAnchors.join("")}${mapOutcome(state, routePoint(state.count / 50), assets)}</svg>${state.status !== "won" ? '<span class="map-destination-label" style="left:10%;top:24%">Oregon City<br><small>Willamette Valley</small></span>' : ""}${markers}</div></div></div><div class="map-key"><span><i class="map-key-complete"></i>Travelled</span><span><i class="map-key-remaining"></i>Ahead</span>${(
+    [
+      ["travel", "Passed through"],
+      ["challenge", "Challenge"],
+      ["stopped", "Wagon stopped"],
+      ["settlement", "Town / fort"],
+    ] as const
+  )
+    .map(
+      ([kind, text]) =>
+        `<span><svg class="map-key-stop map-event-dot map-stop-${kind}" viewBox="-10 -10 20 20" aria-hidden="true">${mapStopSymbol(kind)}</svg>${text}</span>`,
+    )
+    .join(
+      "",
+    )}<small>Drag to pan · scroll or pinch to zoom · point to an event for its story</small></div></section>`;
 }
 export function journeyMapPreview(
   state: Journey,

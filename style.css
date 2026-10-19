@@ -643,9 +643,9 @@ footer p {
   box-shadow: inset 0 1px 0 #f1ead730;
 }
 .players {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
   gap: 8px;
-  flex-wrap: wrap;
   padding-bottom: 16px;
 }
 .player {
@@ -4427,6 +4427,9 @@ button.wagon-condition:focus-visible {
   box-shadow: 0 8px 24px #41483b0a;
 }
 .turn-decision > .eyebrow {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
   color: #52634b;
 }
 .turn-decision .turn-header {
@@ -5342,37 +5345,61 @@ button.wagon-condition:focus-visible {
 }
 .map-turn-history {
   display: grid;
-  gap: 14px;
-  margin-top: 16px;
+  gap: 18px;
+  margin-top: 18px;
 }
 .map-turn {
-  padding-top: 12px;
-  border-top: 1px solid var(--line);
+  padding-left: 12px;
+  border-left: 1px solid #8b795b66;
 }
 .map-turn-heading {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
-  margin-bottom: 9px;
+  position: relative;
+  margin-bottom: 12px;
 }
-.map-turn-heading .portrait {
-  width: 30px;
-  height: 30px;
-  flex: 0 0 30px;
+.map-turn-heading::before {
+  content: "";
+  position: absolute;
+  left: -16px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--sage);
+  box-shadow: 0 0 0 3px var(--paper);
 }
-.map-turn-heading strong {
+.map-turn-heading time {
   font:
-    14px Georgia,
+    17px Georgia,
+    serif;
+  color: var(--ink);
+}
+.map-action-player {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 8px;
+  color: var(--ink);
+}
+.map-action-player .portrait {
+  width: 25px;
+  height: 25px;
+  flex: 0 0 25px;
+}
+.map-action-player strong {
+  font:
+    13px Georgia,
     serif;
 }
-.map-turn-heading small {
-  display: block;
-  color: var(--quiet);
-  font-size: 10px;
-  margin-top: 3px;
+.map-timeline-entry {
+  margin-left: 3px;
+  padding: 0 0 12px 10px;
 }
-.map-turn-action {
-  padding: 4px 0 8px 38px;
+.map-timeline-entry + .map-timeline-entry {
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
 }
 .map-turn-action > strong {
   font-size: 11px;
@@ -5971,6 +5998,7 @@ body.header-compact #app > header .header-icon {
   z-index: 98;
 }
 body.players-compact #app > .players {
+  display: flex;
   flex-wrap: nowrap;
   overflow-x: auto;
   align-items: center;
@@ -6048,7 +6076,8 @@ body.timeline-compact .trail-area > .map-track {
   height: 2px;
 }
 body.timeline-compact .trail-area .progress-wagon {
-  width: 24px;
+  width: 32px;
+  height: 26px;
 }
 body.timeline-compact .trail-body {
   display: flex;
@@ -6720,12 +6749,13 @@ body.top-expanded-manually #app > .players {
 body.timeline-compact .trail-piece .any-road {
   bottom: 3px;
   padding: 1px 3px;
-  background: #f1ead7cc;
-  color: var(--quiet);
+  background: #f1ead7f2;
+  color: var(--ink);
   font:
-    6px/1.2 "Courier New",
+    700 6px/1.2 "Courier New",
     monospace;
   letter-spacing: 0.3px;
+  box-shadow: 0 1px 2px #41483b40;
 }
 
 .map-turn-action > .map-event-context {
@@ -6735,4 +6765,88 @@ body.timeline-compact .trail-piece .any-road {
 }
 .map-turn-action .map-event-visual:has(.map-event-die) {
   background: transparent;
+}
+body.players-compact .players > .player:is(:hover, :focus-within) {
+  outline: 1px solid var(--state-ink, var(--sage));
+  outline-offset: 1px;
+}
+
+@media (max-width: 600px) {
+  .players {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.compact-active-badge {
+  display: none;
+}
+body.players-compact .players > .player {
+  position: relative;
+}
+body.players-compact .players > .player.current {
+  border-color: var(--state-ink, var(--sage));
+  box-shadow:
+    inset 0 0 0 1px #69745b40,
+    0 2px 6px #41483b16;
+}
+body.players-compact .compact-active-badge {
+  display: block;
+  position: absolute;
+  top: -5px;
+  right: 7px;
+  z-index: 2;
+  padding: 1px 4px;
+  border: 1px solid var(--paper);
+  border-radius: 3px;
+  background: var(--state-ink, var(--sage));
+  color: #fff5df;
+  font:
+    bold 7px/1.2 "Courier New",
+    monospace;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+/* Trail stops keep their meaning even when the artwork is collapsed. */
+.map-event-dot.map-stop-stopped {
+  fill: #965b44;
+}
+.map-event-dot.map-stop-challenge {
+  fill: #a67a37;
+}
+.map-event-dot.map-stop-settlement {
+  fill: #4f7473;
+}
+.map-event-dot .map-stop-glyph {
+  fill: none;
+  stroke: #fff3da;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.map-key-stop {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+}
+
+body.timeline-compact .trail-outcome,
+body.timeline-compact .trail-afflicted {
+  pointer-events: none;
+}
+
+.trail-outcome-tooltip .supply-change-bubble {
+  display: grid;
+  place-items: center;
+  width: auto;
+  min-width: 19px;
+  height: 15px;
+  padding: 0 3px;
+  font:
+    bold 10px/1 "Courier New",
+    monospace;
+}
+.trail-outcome-tooltip .timeline-supply-change .supply-change-bubble::before,
+.trail-outcome-tooltip .timeline-supply-change .supply-change-bubble::after {
+  content: none;
 }
