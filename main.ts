@@ -31,6 +31,7 @@ import {
   type ComputerMove,
 } from "./Computer";
 import { reconcile } from "./Render";
+import { advanceSimulation } from "./Simulation";
 import { supplyEmblem, supplyColor, supplyCollectionEmblem } from "./Supplies";
 import { GameHistory, replayGame, type GameAction } from "./History";
 import { gameStatistics, type Outcome } from "./Stats";
@@ -143,6 +144,8 @@ const calamityArt: Record<Calamity, string> = {
 let showJourneys = false;
 let journeyOpenError = "";
 let welcomeDismissed = false;
+let simulationRunning = false;
+let simulationError = "";
 let showStatistics = false;
 let selectedJourneyMap: string | undefined;
 let mapReturnView: "stats" | "journey" = "stats";
@@ -796,7 +799,7 @@ function updateLeader() {
   reconcile(current, template.content.firstElementChild!);
 }
 function setupScreen() {
-  return `<section class="decision setup"><img class="setup-banner" src="${art.landscape}" alt="A covered wagon beneath quiet prairie hills"><div class="setup-body"><p class="eyebrow">A good journey starts with good company</p><h2>Who’s in the wagon?</h2><p>Room for two to six. Pick your companions, pack the kettle, and keep at least one traveller breathing all the way to Oregon.</p><div class="setup-toolbar"><span>${party.length} travellers aboard</span>${button("randomize", "↻ Randomize everyone")}</div><div class="traveller-grid">${party.map(travellerCard).join("")}</div><div class="party-size">${button("add", "+ Traveller", party.length === 6)}</div><div class="setup-departure">${leaderPicker()}${button("start", "Pack up and start your trek →")}</div></div></section>`;
+  return `<section class="decision setup"><img class="setup-banner" src="${art.landscape}" alt="A covered wagon beneath quiet prairie hills"><div class="setup-body"><p class="eyebrow">A good journey starts with good company</p><h2>Who’s in the wagon?</h2><p>Room for two to six. Pick your companions, pack the kettle, and keep at least one traveller breathing all the way to Oregon.</p><div class="setup-toolbar"><span>${party.length} travellers aboard</span>${button("randomize", "↻ Randomize everyone")}</div><div class="traveller-grid">${party.map(travellerCard).join("")}</div><div class="party-size">${button("add", "+ Traveller", party.length === 6)}</div><div class="setup-departure">${leaderPicker()}<div class="setup-start-actions">${button("start", "Pack up and start your trek →")}<div class="setup-simulation"><button type="button" data-action="simulate"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${computerIcon}</svg><span class="simulation-link-text">Let the clankers take the wagon west</span></button></div></div></div></div></section>`;
 }
 function playerTag(index: number) {
   return `<span class="player-tag">${portrait(index)}<span>${escape(game.state.players[index].name)}</span></span>`;
@@ -2358,6 +2361,142 @@ function journeyProgressRing(value: number, total: number, label: string) {
     total > 0 ? Math.max(0, Math.min(100, (value / total) * 100)) : 0;
   return `<span class="journey-progress-ring ${label === "Alive" ? "is-survival" : ""}"><svg viewBox="0 0 48 48" role="img" aria-label="${value} of ${total} ${label.toLowerCase()}"><title>${value} / ${total} ${label.toLowerCase()}</title><circle class="journey-ring-track" cx="24" cy="24" r="20"/><circle class="journey-ring-fill" cx="24" cy="24" r="20" pathLength="100" stroke-dasharray="${progress} 100" transform="rotate(-90 24 24)"/><text x="24" y="24" text-anchor="middle" dominant-baseline="central">${value}/${total}</text></svg><span>${label}</span></span>`;
 }
+function simulationScreen() {
+  const s = game.state;
+  const finished = s.status !== "travel";
+  const won = s.status === "won";
+  const living = s.players.filter((p) => p.alive).length;
+  const title = simulationRunning
+    ? "The oxen are doing the thinking."
+    : finished
+      ? won
+        ? "Oregon. Against the odds."
+        : "Well. The prairie won."
+      : "The wagon is taking a breather.";
+  return `<header><div><p class="eyebrow">The unattended expedition</p><h1>Journey <i>simulation</i></h1></div><div class="header-actions">${navigationIcons()}</div></header><main class="simulation-screen decision" data-simulation-status="${simulationRunning ? "running" : finished ? "complete" : "stopped"}"><img class="simulation-art" src="${finished ? (won ? art.victory : art.defeat) : art.landscape}" alt="${finished ? (won ? "The wagon has reached Oregon" : "The trail has fallen silent") : "A wagon setting out across the prairie"}"><div class="simulation-copy"><span class="journey-mode-tag">Simulated journey</span><h2 tabindex="-1">${title}</h2><p class="simulation-message" role="status">${escape(simulationRunning ? s.note : simulationError || s.note)}</p><div class="simulation-progress" role="progressbar" aria-label="Journey progress" aria-valuenow="${s.count}" aria-valuemin="0" aria-valuemax="50"><span style="width:${s.count * 2}%"></span></div><div class="simulation-totals"><span><strong>${s.count}/50</strong>trail cards</span><span><strong>${Math.max(0, s.turn - 1)}</strong>days on the trail</span><span><strong>${living}/${s.players.length}</strong>travellers alive</span></div>${!simulationRunning ? `<div class="simulation-party">${s.players.map((p, i) => `<div>${p.alive ? portraitImage(p.portrait ?? i) : `<img src="${art.tombstoneIcon}" alt="Gravestone">`}<span><strong>${escape(p.name)}</strong><small>${p.alive ? "Still standing" : escape(p.deathCause ?? "Lost on the trail")}</small></span></div>`).join("")}</div>${finished ? renderJourneyMapPreview(s) : `<button data-action="simulation-resume">Continue simulation →</button>`}<div class="simulation-actions">${button("journeys", "Your journeys")}${button("new", "Another journey →")}</div>` : `<small class="simulation-running-note">${s.simulationActions ?? 0} decisions · No steering required</small>`}</div></main>${siteCredit()}`;
+}
+async function startSimulation() {
+  if (!setup || party.some((p) => !p.name.trim())) {
+    app
+      .querySelector<HTMLInputElement>(".player-name:invalid")
+      ?.reportValidity();
+    return;
+  }
+  const startDate = nextJourneyStartDate(
+    history
+      ? history.archive.games.map((record) => record.initial.startDate)
+      : game.state.started
+        ? [game.state.startDate]
+        : [],
+  );
+  const simulated = new TrailGame(
+    Math.random,
+    undefined,
+    (n) => pendingRolls.push(n),
+    (kind) => {
+      revealedCalamity = kind;
+    },
+  );
+  if (
+    !simulated.reset(
+      party.map((p) => p.name),
+      firstPlayer,
+      party.map((p) => p.portrait),
+    )
+  )
+    return;
+  game = simulated;
+  game.state.mode = "simulation";
+  game.state.simulationActions = 0;
+  game.state.startDate = startDate;
+  game.state.players.forEach((p) => (p.controller = "computer"));
+  pendingRolls.length = 0;
+  revealedCalamity = undefined;
+  setup = false;
+  confirming = false;
+  statisticsData = undefined;
+  persist({ type: "start" });
+  await runSimulation();
+}
+async function runSimulation() {
+  if (
+    simulationRunning ||
+    game.state.mode !== "simulation" ||
+    game.state.status !== "travel"
+  )
+    return;
+  const runningGame = game;
+  simulationRunning = true;
+  simulationError = "";
+  clearComputerCountdown();
+  setBusy(true);
+  window.scrollTo({ top: 0, behavior: "instant" });
+  render();
+  let actions = 0;
+  try {
+    // Small batches paint progress and keep the browser responsive without turn UI.
+    while (
+      runningGame === game &&
+      game.state.status === "travel" &&
+      actions < 5000
+    ) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 80));
+      for (
+        let i = 0;
+        i < 6 && game.state.status === "travel" && actions < 5000;
+        i++
+      ) {
+        pendingRolls.length = 0;
+        revealedCalamity = undefined;
+        const step = advanceSimulation(game);
+        if (!step) throw new Error("The simulation has no next action.");
+        recordTrailResult(
+          (step.action.args as DOMStringMap) ?? {},
+          step.before,
+          step.played,
+        );
+        persist(step.action);
+        pendingRolls.length = 0;
+        actions++;
+      }
+      if (game.state.status === "travel") render();
+    }
+    if (game.state.status === "travel")
+      simulationError =
+        "The safety limit paused this simulation. You can continue from here.";
+  } catch (error) {
+    simulationError =
+      error instanceof Error
+        ? error.message
+        : "The simulation paused unexpectedly.";
+  } finally {
+    pendingRolls.length = 0;
+    revealedCalamity = undefined;
+    simulationRunning = false;
+    statisticsData = undefined;
+    render();
+    if (!reducedMotion.matches)
+      await playTimeline((tl) =>
+        tl.fromTo(
+          app.querySelectorAll(
+            ".simulation-copy > h2, .simulation-party, .simulation-copy > .journey-map-preview",
+          ),
+          { opacity: 0, y: 8 },
+          {
+            opacity: 1,
+            y: 0,
+            duration: 0.3,
+            stagger: 0.05,
+            clearProps: "opacity,transform",
+          },
+        ),
+      );
+    setBusy(false);
+    app
+      .querySelector<HTMLElement>(".simulation-copy h2")
+      ?.focus({ preventScroll: true });
+  }
+}
 function siteCredit() {
   return `<div class="site-credit">© ${new Date().getFullYear()} · Made with ❤️ and 🍌 by <a href="https://www.metamodernmonkey.com/" target="_blank" rel="noopener noreferrer">Meta Modern Monkey</a></div>`;
 }
@@ -2395,7 +2534,7 @@ function journeysScreen() {
               state && !["won", "lost"].includes(record.outcome)
                 ? (state.players[state.current]?.name ?? "")
                 : "";
-            return `<article class="journey-list-row" data-ui-key="journey-choice-${escape(record.id)}"><img class="journey-list-art" src="${scene.src}" alt="${escape(scene.alt)}" loading="lazy" width="160" height="112"><div class="journey-list-copy"><div class="journey-list-title"><h3>Journey ${record.number}</h3><span class="stats-outcome-tag stats-tag-${record.outcome}">${outcomeNames[record.outcome]}</span>${current ? '<span class="journey-current-tag">Current</span>' : ""}</div><div class="journey-list-metrics">${journeyProgressRing(record.distance, 50, "Cards")}${journeyProgressRing(record.survivors, record.players.length, "Alive")}<span class="journey-list-date">${date}<small>${record.days} day${record.days === 1 ? "" : "s"} on the trail</small></span></div><div class="journey-list-party">${record.players.map((player, index) => `<span>${player.alive ? portraitImage(player.portrait ?? index % 6) : `<img class="stats-grave" src="${art.tombstoneIcon}" alt="">`}<span>${escape(player.name)}</span></span>`).join("")}</div></div><div class="journey-list-open">${turnName ? `<small>${escape(turnName)}’s turn</small>` : ""}<button data-open-journey="${escape(record.id)}" aria-label="Open Journey ${record.number}">${record.outcome === "won" || record.outcome === "lost" ? "View result" : "Open journey"} →</button></div></article>`;
+            return `<article class="journey-list-row" data-ui-key="journey-choice-${escape(record.id)}"><img class="journey-list-art" src="${scene.src}" alt="${escape(scene.alt)}" loading="lazy" width="160" height="112"><div class="journey-list-copy"><div class="journey-list-title"><h3>Journey ${record.number}</h3>${record.simulated ? '<span class="journey-mode-tag">Simulated</span>' : ""}<span class="stats-outcome-tag stats-tag-${record.outcome}">${outcomeNames[record.outcome]}</span>${current ? '<span class="journey-current-tag">Current</span>' : ""}</div><div class="journey-list-metrics">${journeyProgressRing(record.distance, 50, "Cards")}${journeyProgressRing(record.survivors, record.players.length, "Alive")}<span class="journey-list-date">${date}<small>${record.days} day${record.days === 1 ? "" : "s"} on the trail</small></span></div><div class="journey-list-party">${record.players.map((player, index) => `<span>${player.alive ? portraitImage(player.portrait ?? index % 6) : `<img class="stats-grave" src="${art.tombstoneIcon}" alt="">`}<span>${escape(player.name)}</span></span>`).join("")}</div></div><div class="journey-list-open">${turnName ? `<small>${escape(turnName)}’s turn</small>` : ""}<button data-open-journey="${escape(record.id)}" aria-label="Open Journey ${record.number}">${record.outcome === "won" || record.outcome === "lost" ? "View result" : "Open journey"} →</button></div></article>`;
           })
           .join("")}</div>`
       : welcomeScreen()
@@ -2450,7 +2589,7 @@ function journeyMapScreen() {
   if (!record) return statisticsScreen();
   const state = replayGame(record);
   const number = history!.archive.games.indexOf(record) + 1;
-  return `<main class="journey-atlas-view" data-ui-key="atlas-${escape(record.id)}"><header class="atlas-toolbar"><button data-map-back>← ${mapReturnView === "journey" ? "Back to journey" : "Statistics"}</button><div><h1>Journey ${number}</h1><span class="stats-outcome-tag stats-tag-${record.outcome}">${outcomeNames[record.outcome]}</span></div><span class="atlas-route-label">Independence → Oregon City</span><button data-open-journey="${escape(record.id)}">${state.status === "travel" ? "Continue journey" : "Final result"} →</button></header>${!record.completeFromStart ? '<p class="map-partial">Some earlier turn details were not recorded.</p>' : ""}${renderJourneyMap(state, record)}</main>`;
+  return `<main class="journey-atlas-view" data-ui-key="atlas-${escape(record.id)}"><header class="atlas-toolbar"><button data-map-back>← ${mapReturnView === "journey" ? "Back to journey" : "Statistics"}</button><div><h1>Journey ${number}</h1>${record.simulated ? '<span class="journey-mode-tag">Simulated</span>' : ""}<span class="stats-outcome-tag stats-tag-${record.outcome}">${outcomeNames[record.outcome]}</span></div><span class="atlas-route-label">Independence → Oregon City</span><button data-open-journey="${escape(record.id)}">${state.status === "travel" ? "Continue journey" : "Final result"} →</button></header>${!record.completeFromStart ? '<p class="map-partial">Some earlier turn details were not recorded.</p>' : ""}${renderJourneyMap(state, record)}</main>`;
 }
 app.addEventListener("click", async (event) => {
   const target = (event.target as Element).closest<HTMLButtonElement>(
@@ -2528,7 +2667,7 @@ function statisticsScreen() {
             : '<div class="stats-no-deaths"><img src="' +
               art.progressWagon +
               '" alt=""><p>No travellers lost so far.</p></div>'
-        }</section></div><section class="stats-history"><div class="stats-panel-heading"><h3>The journey ledger</h3></div><div class="stats-filters" role="group" aria-label="Filter saved journeys">${(["all", ...labels] as const).map((outcome) => `<button data-stats-filter="${outcome}" aria-pressed="${statisticsFilter === outcome}">${outcome === "all" ? "All journeys" : outcomeNames[outcome]} <span>${outcome === "all" ? total : data.outcomes[outcome]}</span></button>`).join("")}</div><div class="stats-records">${visible.length ? visible.map((record) => `<article class="stats-record" data-ui-key="stats-record-${escape(record.id)}"><div class="stats-record-title"><h4>Journey ${record.number}</h4><span class="stats-outcome-tag stats-tag-${record.outcome}">${outcomeNames[record.outcome]}</span></div><div class="stats-record-date">${date(record.startedAt)}${record.partial ? " · Partial turn history" : ""}</div><div class="stats-record-progress"><span style="width:${record.distance * 2}%" class="stats-tone-${record.outcome}"></span></div><div class="stats-record-totals"><span>${record.distance} / 50 cards</span><span>${record.days} day${record.days === 1 ? "" : "s"}</span><span>${record.survivors} / ${record.players.length} alive</span></div><div class="stats-record-party">${record.players.map((player, index) => `<span title="${escape(player.name)}${!player.alive ? ` — ${escape(player.deathCause ?? "Died on the trail")}` : ""}" aria-label="${escape(player.name)}${!player.alive ? ", deceased" : ""}">${player.alive ? portraitImage(player.portrait ?? index % 6) : `<img class="stats-grave" src="${art.tombstoneIcon}" alt="">`}</span>`).join("")}</div><button class="stats-map-button" data-view-journey="${escape(record.id)}">View trail map →</button></article>`).join("") : '<p class="stats-no-records">No journeys in this group yet.</p>'}</div></section>`
+        }</section></div><section class="stats-history"><div class="stats-panel-heading"><h3>The journey ledger</h3></div><div class="stats-filters" role="group" aria-label="Filter saved journeys">${(["all", ...labels] as const).map((outcome) => `<button data-stats-filter="${outcome}" aria-pressed="${statisticsFilter === outcome}">${outcome === "all" ? "All journeys" : outcomeNames[outcome]} <span>${outcome === "all" ? total : data.outcomes[outcome]}</span></button>`).join("")}</div><div class="stats-records">${visible.length ? visible.map((record) => `<article class="stats-record" data-ui-key="stats-record-${escape(record.id)}"><div class="stats-record-title"><h4>Journey ${record.number}</h4>${record.simulated ? '<span class="journey-mode-tag">Simulated</span>' : ""}<span class="stats-outcome-tag stats-tag-${record.outcome}">${outcomeNames[record.outcome]}</span></div><div class="stats-record-date">${date(record.startedAt)}${record.partial ? " · Partial turn history" : ""}</div><div class="stats-record-progress"><span style="width:${record.distance * 2}%" class="stats-tone-${record.outcome}"></span></div><div class="stats-record-totals"><span>${record.distance} / 50 cards</span><span>${record.days} day${record.days === 1 ? "" : "s"}</span><span>${record.survivors} / ${record.players.length} alive</span></div><div class="stats-record-party">${record.players.map((player, index) => `<span title="${escape(player.name)}${!player.alive ? ` — ${escape(player.deathCause ?? "Died on the trail")}` : ""}" aria-label="${escape(player.name)}${!player.alive ? ", deceased" : ""}">${player.alive ? portraitImage(player.portrait ?? index % 6) : `<img class="stats-grave" src="${art.tombstoneIcon}" alt="">`}</span>`).join("")}</div><button class="stats-map-button" data-view-journey="${escape(record.id)}">View trail map →</button></article>`).join("") : '<p class="stats-no-records">No journeys in this group yet.</p>'}</div></section>`
   }</main>`;
 }
 app.addEventListener("click", async (event) => {
@@ -2608,6 +2747,10 @@ app.addEventListener("click", async (event) => {
       if (creating) {
         welcomeDismissed = true;
         confirming = !setup;
+        if (game.state.mode === "simulation") {
+          setup = true;
+          confirming = false;
+        }
       }
     }
     render();
@@ -2635,7 +2778,7 @@ app.addEventListener("click", async (event) => {
           { opacity: 1, y: 0, duration: 0.25, clearProps: "opacity,transform" },
         ),
       );
-    if (opening) {
+    if (opening && game.state.mode !== "simulation") {
       if (game.state.status !== "travel") await revealJourneyEnd();
       else if (game.state.phase === "legacy") {
         await revealWills();
@@ -2759,6 +2902,14 @@ function render() {
     const credit = document.createElement("template");
     credit.innerHTML = selectedJourneyMap ? "" : siteCredit();
     page.content.append(credit.content);
+    const changed = reconcile(app, page.content);
+    initializeJourneyMapViewport();
+    scheduleStickyPanels();
+    return changed;
+  }
+  if (!setup && game.state.mode === "simulation") {
+    const page = document.createElement("template");
+    page.innerHTML = simulationScreen();
     const changed = reconcile(app, page.content);
     initializeJourneyMapViewport();
     scheduleStickyPanels();
@@ -3647,6 +3798,10 @@ app.addEventListener("click", async (event) => {
     }
     return;
   }
+  if (button.dataset.action === "simulation-resume") {
+    await runSimulation();
+    return;
+  }
   if (button.dataset.controllerPlayer !== undefined) {
     if (!setup) return;
     const index = Number(button.dataset.controllerPlayer);
@@ -3757,6 +3912,10 @@ app.addEventListener("click", async (event) => {
     party = Array.from(
       app.querySelectorAll<HTMLInputElement>(".player-name"),
     ).map((e, i) => ({ ...party[i], name: e.value }));
+  if (d.action === "simulate") {
+    await startSimulation();
+    return;
+  }
   if (d.action === "trade") {
     const payments = Array.from(
       app.querySelectorAll<HTMLInputElement>("[name=payment]:checked"),
@@ -4287,7 +4446,8 @@ app.addEventListener("click", async (event) => {
       for (const owner of casualties)
         await revealActionResult(deathResult(owner, beforeResult));
     }
-    if (game.state.phase === "legacy") await revealWills();
+    if (game.state.mode !== "simulation" && game.state.phase === "legacy")
+      await revealWills();
     if (
       !wasSetup &&
       beforeResult.status === "travel" &&
@@ -4557,6 +4717,7 @@ let computerReadyKey = "",
 function computerTick() {
   if (
     document.hidden ||
+    game.state.mode === "simulation" ||
     computerPaused ||
     setup ||
     confirming ||
@@ -4663,13 +4824,23 @@ void (async () => {
           { opacity: 1, y: 0, duration: 0.6, stagger: 0.05, clearProps: "all" },
         ),
       );
-    if (!setup && game.state.phase === "legacy") {
+    if (
+      !setup &&
+      game.state.mode !== "simulation" &&
+      game.state.phase === "legacy"
+    ) {
       await revealWills();
       render();
     }
   } finally {
     setBusy(false);
   }
+  if (
+    !setup &&
+    game.state.mode === "simulation" &&
+    game.state.status === "travel"
+  )
+    await runSimulation();
 })();
 if (import.meta.hot)
   import.meta.hot.dispose(() => {

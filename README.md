@@ -21,6 +21,8 @@ Built with TypeScript, Vite, GSAP, HTML/CSS, and generated distressed-print illu
 
 Choose Human or Computer using the icons on each wagon setup card. Computer travellers play at a relaxed pace, including card reveals and dice results; pause them during their turn or a result screen. All travellers default to human.
 
+For a hands-off run, choose **Simulate journey** beneath the regular start button. It runs the whole party through a dedicated progress view, then shows results and an explorable journey map. These games are saved and marked **Simulated** in history.
+
 The same browser-independent strategy can run entire seeded games without a UI:
 
 ```sh

@@ -3,6 +3,7 @@ import type { RecordedGame } from "./History";
 
 export type Outcome = "won" | "lost" | "abandoned" | "travel";
 export type JourneySummary = {
+  simulated: boolean;
   id: string;
   startedAt: string;
   outcome: Outcome;
@@ -19,6 +20,7 @@ export function gameStatistics(
     .filter(({ state }) => state.started)
     .map(({ record, state }) => ({
       id: record.id,
+      simulated: record.simulated === true || state.mode === "simulation",
       startedAt: record.startedAt,
       outcome: record.outcome === "abandoned" ? "abandoned" : state.status,
       distance: Math.min(50, Math.max(0, state.count)),

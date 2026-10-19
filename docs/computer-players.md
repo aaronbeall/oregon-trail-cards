@@ -56,3 +56,13 @@ const result = simulateGame({ seed: 42, players: 4, maxActions: 5000 });
 `simulateGame` automatically resolves every phase, including inheritance. An illegal/unsupported decision throws rather than silently skipping it. The action budget reports `truncated: true` instead of calling an unfinished game a loss. The headless adapter refuses human-owned trade payments unless their owners are explicitly approved; all-computer simulations need no approval. The browser dispatches the same chosen moves through its normal action handlers, preserving presentation and recording; the headless adapter calls the same engine methods directly.
 
 Tests cover legal actions, deadline priorities, two-supply remedies, rotations, trades, hidden-deck independence, controller saves, reproducibility, and complete games with two through six travellers.
+
+## Simulation mode in the game
+
+Wagon setup offers **Simulate journey** below the regular start button. It uses the chosen travellers, portraits and leader, makes the entire party computer-controlled, and opens a dedicated progress/results screen. It bypasses the interactive turn layout, paced animations, card reveals and confirmation screens.
+
+The browser advances six decisions per small batch so progress can paint and the page stays responsive. Every decision and dice result is recorded with the normal history schema. Inheritance is committed as one transaction, preserving accurate gifts and returned supplies in map tooltips. The results page shows distance, days, survivors, individual outcomes, and a link into the normal journey map.
+
+Simulated journeys have `mode: "simulation"` in saved state and `simulated: true` on their archive record. Journey selection, statistics entries and the atlas display a **Simulated** badge. They remain part of aggregate statistics and are visibly identified in the journey ledger. Regular games are not marked as simulations, even if every traveller is a computer.
+
+Reloading an unfinished simulation resumes it in the simulation view. A 5,000-action safety limit pauses a run without recording a false loss; it can be continued. Reopening a completed simulated journey shows its results instead of the interactive game UI. Browser runs use ordinary game randomness; use the seeded headless runner for reproducible experiments.

@@ -21,6 +21,7 @@ export type HistoryEvent = {
   changes: Change[];
 };
 export type RecordedGame = {
+  simulated?: boolean;
   id: string;
   startedAt: string;
   endedAt?: string;
@@ -180,6 +181,7 @@ export class GameHistory {
         startedAt: at,
         outcome: state.status,
         completeFromStart: action.type === "start",
+        ...(state.mode === "simulation" ? { simulated: true } : {}),
         initial: structuredClone(state),
         events: [],
         ...(state.status !== "travel" ? { endedAt: at } : {}),

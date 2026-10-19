@@ -176,6 +176,8 @@ export type SupplyLoss = {
   reason: "river" | "thief";
 };
 export type Journey = {
+  mode?: "simulation";
+  simulationActions?: number;
   version: 2;
   players: Player[];
   current: number;
@@ -973,7 +975,7 @@ export class TrailGame {
     } else {
       if (k === "cholera" || k === "measles") {
         for (const h of s.hazards.filter((h) => h.kind === k)) {
-          this.kill(h.owner, `a second ${titles[k].toLowerCase()} card`);
+          this.kill(h.owner, titles[k]);
           s.hazards = s.hazards.filter((x) => x !== h);
         }
         if (this.player.alive)
@@ -1042,6 +1044,12 @@ export function readSave(raw: string | null): Journey | undefined {
       [0, 1, 2].includes(c.right) &&
       ["trail", "river", "calamity", "town", "fort"].includes(c.type) &&
       typeof c.rotated === "boolean";
+    if (s.mode !== undefined && s.mode !== "simulation") return;
+    if (
+      s.simulationActions !== undefined &&
+      (!Number.isSafeInteger(s.simulationActions) || s.simulationActions < 0)
+    )
+      return;
     if (
       !s.players.every(
         (p: Player) =>
