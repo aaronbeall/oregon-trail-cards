@@ -8,7 +8,6 @@ An Oregon Trail card game with local co-op and robo mode to confirm dysentery is
 - Connect trail cards, cross rivers, trade supplies, and survive calamities.
 - Save journeys automatically and explore their events on an illustrated map.
 - Compare outcomes with visual statistics, traveller fates, and temporary simulation batches.
-- Enjoy worn-print artwork, animated card reveals, and 3D dice rolls.
 
 ![The wagon, travellers, and trail](docs/screenshots/gameplay.png)
 ![An illustrated journey map](docs/screenshots/journey-map.png)
