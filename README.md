@@ -6,12 +6,13 @@ An Oregon Trail card game with local co-op and robo mode to confirm dysentery is
 
 - Play solo, share a screen in local co-op, or bring computer companions.
 - Connect trail cards, cross rivers, trade supplies, and survive calamities.
-- Save journeys automatically and explore their events on an illustrated map.
+- Save journeys automatically and replay their events on an illustrated map.
 - Compare outcomes with visual statistics, traveller fates, and temporary simulation batches.
 
-![The wagon, travellers, and trail](docs/screenshots/gameplay.png)
-![An illustrated journey map](docs/screenshots/journey-map.png)
-![Journey statistics and outcome flows](docs/screenshots/statistics.png)
+![A traveller’s turn, supplies, hand, and the trail so far](docs/screenshots/gameplay.png)
+![A completed journey from Independence to Oregon City](docs/screenshots/journey-map.png)
+![Journey playback with the traveller roster, river artwork, and action toasts](docs/screenshots/journey-playback.png)
+![Journey statistics with outcome flows and causes of loss](docs/screenshots/statistics.png)
 
 ## Run locally
 
@@ -28,6 +29,6 @@ npm run build
 npm run simulate -- --games 100 --players 3 --seed 1
 ```
 
-[Rules and adaptations](docs/rules.md) · [Computer strategy and simulations](docs/computer-players.md) · [Saved history format](docs/history.md)
+[Rules and adaptations](docs/rules.md) — [Computer strategy and simulations](docs/computer-players.md) — [Saved history format](docs/history.md)
 
 GitHub Actions builds and publishes GitHub Pages when changes are pushed to `main`.
