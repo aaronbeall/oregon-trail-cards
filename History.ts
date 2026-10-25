@@ -1,5 +1,15 @@
 import type { Journey } from "./TrailCard";
 
+/** Browser-local identifiers also work before a custom domain has HTTPS. */
+export function createId(source: Pick<Crypto, "getRandomValues"> & Partial<Pick<Crypto, "randomUUID">> = globalThis.crypto) {
+  if (typeof source.randomUUID === "function") return source.randomUUID();
+  const bytes = source.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 15) | 64;
+  bytes[8] = (bytes[8] & 63) | 128;
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 export const HISTORY_KEY = "oregon-trail-cards.history.v1";
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 type Path = (string | number)[];
@@ -124,7 +134,7 @@ export class GameHistory {
   constructor(
     private storage: Pick<Storage, "getItem" | "setItem">,
     private now = () => new Date().toISOString(),
-    private id = () => crypto.randomUUID(),
+    private id = createId,
   ) {
     const raw = storage.getItem(HISTORY_KEY);
     this.archive = raw

@@ -35,7 +35,7 @@ import { reconcile } from "./Render";
 import { advanceSimulation } from "./Simulation";
 import type { FlowMode } from "./Flows";
 import { supplyEmblem, supplyColor, supplyCollectionEmblem } from "./Supplies";
-import { GameHistory, replayGame, type GameAction } from "./History";
+import { GameHistory, replayGame, createId, type GameAction } from "./History";
 import {
   gameStatistics,
   summarizeJourneys,
@@ -193,7 +193,7 @@ type WagonTraveller = {
 let party: WagonTraveller[] = randomParty(3);
 let computerPaused = false;
 let computerSequenceOwner: number | undefined;
-let partyKeys = party.map(() => crypto.randomUUID());
+let partyKeys = party.map(() => createId());
 let renderedProgress = -1;
 let firstPlayer = 0;
 let portraitPicker: number | null = null;
@@ -4209,7 +4209,7 @@ app.addEventListener("click", async (event) => {
     setup = true;
     confirming = false;
     party = randomParty(game.state.players.length);
-    partyKeys = party.map(() => crypto.randomUUID());
+    partyKeys = party.map(() => createId());
     firstPlayer = 0;
     portraitPicker = null;
     changed = true;
@@ -4220,7 +4220,7 @@ app.addEventListener("click", async (event) => {
     );
     const selectedPortrait =
       available[Math.floor(Math.random() * available.length)];
-    partyKeys.push(crypto.randomUUID());
+    partyKeys.push(createId());
     party.push({
       name: randomName(
         party.map((p) => p.name),

@@ -16,7 +16,7 @@ async function load(file) {
     `data:text/javascript;base64,${Buffer.from(source).toString("base64")}`
   );
 }
-const { GameHistory, HISTORY_KEY, replayGame } = await load("../History.ts");
+const { GameHistory, HISTORY_KEY, replayGame, createId } = await load("../History.ts");
 const { TrailGame, names } = await load("../TrailCard.ts");
 function setup() {
   let serial = 0;
@@ -227,4 +227,13 @@ test("failed or unknown journey selection leaves archive untouched", () => {
   assert.throws(() => history.select(before.active), /Storage full/);
   assert.deepEqual(history.archive, before);
   storage.setItem = write;
+});
+
+
+test("local IDs work without the secure-context randomUUID API", () => {
+  const insecureCrypto = { getRandomValues: (bytes) => crypto.getRandomValues(bytes) };
+  const ids = Array.from({ length: 100 }, () => createId(insecureCrypto));
+  assert.equal(new Set(ids).size, ids.length);
+  for (const id of ids) assert.match(id, /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/);
+  assert.equal(createId({ randomUUID: () => "native-id" }), "native-id");
 });
