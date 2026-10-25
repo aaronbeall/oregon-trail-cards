@@ -60,6 +60,79 @@ function fresh() {
   g.reset(["Ada", "Bea", "Cy"]);
   return g.state;
 }
+test("map tooltip dates and action times use the recorded calendar and playback schedule", async () => {
+  const { GameHistory } = await import(historySource);
+  const g = new TrailGame(() => 0.25);
+  g.reset(["Ada", "Bea", "Cy"]);
+  g.state.startDate = "1847-04-12";
+  g.state.players[0].hand = [
+    { id: 9987, type: "river", left: 1, right: 1, rotated: false },
+  ];
+  const h = new GameHistory({ getItem: () => null, setItem() {} });
+  h.capture(g.state, { type: "start" });
+  g.play(0);
+  h.capture(g.state, { type: "play", args: { play: "0" } });
+  for (const [random, face] of [
+    [0.4, 3],
+    [0.7, 5],
+    [0.3, 2],
+  ]) {
+    g.random = () => random;
+    assert.ok(g.cross());
+    h.capture(g.state, { type: "roll", rolls: [face] });
+  }
+  g.state.players[g.state.current].hand = [];
+  h.capture(g.state, { type: "setup-test-hand" });
+  assert.ok(g.draw());
+  h.capture(g.state, { type: "draw" });
+  const art = new Proxy({}, { get: (_, key) => `${String(key)}.webp` });
+  const html = journeyMap(
+    { ...g.state, startDate: "1847-04-01" },
+    { art, calamities: {}, portraits: [] },
+    h.archive.games[0],
+  );
+  const decode = (text) =>
+    text
+      .replaceAll("&quot;", '"')
+      .replaceAll("&lt;", "<")
+      .replaceAll("&gt;", ">")
+      .replaceAll("&#39;", "'")
+      .replaceAll("&amp;", "&");
+  const content = [...html.matchAll(/data-map-content="([^"]*)"/g)]
+    .map((m) => decode(m[1]))
+    .find((t) => t.includes("attempted the flowing river crossing"));
+  assert.ok(content);
+  assert.match(content, /datetime="1847-04-12"/);
+  assert.match(content, /datetime="1847-04-13"/);
+  assert.doesNotMatch(
+    content,
+    /Apr 1, 1847|Turn [1-9]|next traveller|Finished giving supplies/,
+  );
+  assert.equal((content.match(/datetime="1847-04-12"/g) ?? []).length, 1);
+  assert.match(content, /Day 1/);
+  assert.match(content, /Day 2/);
+  const cues = JSON.parse(
+    html.match(
+      /<script type="application\/json" data-map-cues>([^]*?)<\/script>/,
+    )[1],
+  );
+  const schedule = mapPlaybackTimeline(cues);
+  const times = [...content.matchAll(/class="map-action-time">([^<]*)</g)].map(
+    (m) => m[1],
+  );
+  assert.deepEqual(
+    times,
+    schedule
+      .filter((c) => c.step === 1 && c.toasts?.length)
+      .map((c) => mapPlaybackClock(schedule, c.arrive).time),
+  );
+  assert.ok(
+    schedule
+      .filter((c) => c.step === 1)
+      .slice(0, 4)
+      .every((c) => c.day === 1 && c.date === "Apr 12, 1847"),
+  );
+});
 test("settlements keep the wagon stopped through later player actions until another card is played", async () => {
   const { GameHistory } = await import(historySource);
   for (const type of ["town", "fort"]) {
@@ -814,7 +887,7 @@ test("remedies at the same stop keep chronological turns without adding travel d
     [1, 2, 3],
   );
   assert.match(actions[1].action, /Medicine to Ada/);
-  assert.match(actions[1].context, /first faced on turn 1/);
+  assert.match(actions[1].context, /first faced on day 1/);
   assert.deepEqual(actions[1].supplies, [
     { player: 1, kind: "medicine", delta: -1 },
   ]);
@@ -1086,7 +1159,7 @@ test("turn 8 treatment follows turns 6 and 7 instead of rewriting the turn 5 cal
     events[2].actions.map((a) => a.turn),
     [7, 8],
   );
-  assert.match(events[2].actions[1].context, /first faced on turn 5/);
+  assert.match(events[2].actions[1].context, /first faced on day 1/);
   assert.equal(events[2].actions[1].type, "cure");
   assert.ok(!events[0].actions.some((a) => a.turn === 8));
   assert.ok(!JSON.stringify(events[0]).includes("remedied"));

@@ -8555,3 +8555,12 @@ body.timeline-compact .trail-afflicted {
 .geographic-map img.faces-west {
   transform: scaleX(-1);
 }
+.map-action-time {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--quiet);
+  font:
+    10px Georgia,
+    serif;
+  white-space: nowrap;
+}
