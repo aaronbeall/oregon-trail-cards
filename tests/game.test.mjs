@@ -23,6 +23,8 @@ const {
   JOURNEY_START_DATE,
   hazardDeadline,
   hazardSeverity,
+  deathEpitaphs,
+  randomEpitaph,
 } = await import(
   `data:text/javascript;base64,${Buffer.from(source).toString("base64")}`
 );
@@ -32,6 +34,41 @@ function seed(n) {
     return n / 4294967296;
   };
 }
+test("every death cause has varied epitaphs and deaths select a persistent default", () => {
+  for (const [cause, options] of Object.entries(deathEpitaphs)) {
+    assert.ok(options.length >= 5);
+    assert.equal(new Set(options).size, options.length);
+    assert.equal(
+      randomEpitaph(cause, () => 0),
+      options[0],
+    );
+    assert.equal(
+      randomEpitaph(cause, () => 0.99),
+      options.at(-1),
+    );
+  }
+  assert.ok(
+    deathEpitaphs.drowning.includes(
+      randomEpitaph("drowned crossing the river"),
+    ),
+  );
+  assert.ok(deathEpitaphs.snake.includes(randomEpitaph("Snakebite")));
+  for (const mode of [undefined, "simulation"]) {
+    const g = new TrailGame(() => 0.25);
+    g.reset(["Ada", "Bea", "Cy"]);
+    g.state.mode = mode;
+    g.state.calamities = ["dysentery"];
+    g.state.players[0].hand = [
+      { id: 9999, type: "calamity", left: 1, right: 1, rotated: false },
+    ];
+    assert.ok(g.play(0));
+    assert.ok(deathEpitaphs.dysentery.includes(g.state.players[0].epitaph));
+    assert.equal(
+      readSave(JSON.stringify(g.state)).players[0].epitaph,
+      g.state.players[0].epitaph,
+    );
+  }
+});
 const card = (type = "trail", left = 1, right = 1, extra = {}) => ({
   id: 999,
   type,
@@ -768,7 +805,7 @@ test("river attempts share one calendar day while turns and round deadlines adva
   assert.equal(resumed.state.day, 3);
   const legacy = structuredClone(g.state);
   delete legacy.day;
-  assert.equal(new TrailGame(() => 0.25, legacy).state.day, legacy.turn);
+  assert.equal(readSave(JSON.stringify(legacy)), undefined);
   assert.equal(readSave(JSON.stringify({ ...g.state, day: 0 })), undefined);
 });
 

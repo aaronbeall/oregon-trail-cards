@@ -35,12 +35,17 @@ const {
   routePath,
   oregonRoute,
   mapPlaybackTimeline,
+  mapPlaybackProgress,
   mapPlaybackClock,
   PLAYBACK_TOAST_GAP,
   playbackHold,
   mapTooltipPlacement,
   mapActionPresentation,
   groupSupplyActions,
+  playbackToasts,
+  playbackPartySummary,
+  playbackPlayerStates,
+  mapResultText,
 } = await import(
   compile("JourneyVisuals", {
     TrailCard: trail,
@@ -55,6 +60,396 @@ function fresh() {
   g.reset(["Ada", "Bea", "Cy"]);
   return g.state;
 }
+test("settlements keep the wagon stopped through later player actions until another card is played", async () => {
+  const { GameHistory } = await import(historySource);
+  for (const type of ["town", "fort"]) {
+    const g = new TrailGame(() => 0.25);
+    g.reset(["Ada", "Bea", "Cy"]);
+    g.state.shop.water = 10;
+    g.state.players[0].hand = [
+      { id: 9999, type, left: 1, right: 1, rotated: false },
+    ];
+    const history = new GameHistory({ getItem: () => null, setItem() {} });
+    history.capture(g.state, { type: "start" });
+    assert.ok(g.play(0));
+    history.capture(g.state, { type: "play", args: { play: "0" } });
+    while (g.state.phase === type) {
+      assert.ok(g.takeSupply("water"));
+      history.capture(g.state, { type: "take", args: { take: "water" } });
+    }
+    g.state.players[g.state.current].hand = [];
+    history.capture(g.state, { type: "setup-test-hand" });
+    assert.ok(g.draw());
+    history.capture(g.state, { type: "draw" });
+    const events = journeyMapEvents(g.state, history.archive.games[0]);
+    const actions = events.flatMap((e) => e.actions);
+    for (const action of actions) {
+      assert.equal(action.wagonState, "settlement");
+      assert.equal(action.wagonAfter, "settlement");
+      assert.ok(playbackHold(events[1], action) > 0);
+    }
+    g.state.players[g.state.current].hand = [
+      { id: 9998, type: "trail", left: 1, right: 1, rotated: false },
+    ];
+    history.capture(g.state, { type: "setup-test-hand" });
+    assert.ok(g.play(0));
+    history.capture(g.state, { type: "play", args: { play: "0" } });
+    const departure = journeyMapEvents(g.state, history.archive.games[0])
+      .at(-1)
+      .actions.at(-1);
+    assert.equal(departure.wagonState, "travel");
+    assert.equal(departure.wagonAfter, "travel");
+  }
+});
+test("roster status snapshots preserve health, treatment needs, and deaths at each action", () => {
+  const state = fresh();
+  const healthy = playbackPlayerStates(state);
+  state.hazards = [
+    {
+      id: 90,
+      kind: "typhoid",
+      owner: 0,
+      needs: { water: 1, medicine: 1 },
+      rounds: 1,
+      skip: 0,
+      waiting: [0, 1, 2],
+      born: 1,
+    },
+  ];
+  const ill = playbackPlayerStates(state);
+  assert.match(
+    ill[0].join(" "),
+    /Typhoid.*1 clean water and 1 medicine.*1 round/,
+  );
+  assert.match(healthy[0][0], /In good health/);
+  assert.match(ill[1][0], /In good health/);
+  state.players[0].alive = false;
+  state.players[0].deathCause = "Typhoid";
+  state.players[0].deathDate = "1847-04-03";
+  state.players[0].epitaph = "Rest easy.";
+  const dead = playbackPlayerStates(state);
+  assert.deepEqual(dead[0], ["Died of Typhoid on Apr 3, 1847.", "Rest easy."]);
+  assert.match(ill[0][0], /Typhoid/);
+  assert.doesNotMatch(ill[0].join(" "), /Died/);
+});
+test("playback ending labels summarize the travellers' actual outcome", () => {
+  const state = fresh();
+  assert.equal(playbackPartySummary(state), "3 travellers still on the trail");
+  state.status = "won";
+  assert.equal(playbackPartySummary(state), "3 travellers reached Oregon");
+  state.players[0].alive = false;
+  state.players[1].alive = false;
+  assert.equal(playbackPartySummary(state), "1 traveller reached Oregon");
+  state.status = "lost";
+  assert.equal(
+    playbackPartySummary(state),
+    "1 traveller survived. The wagon could go no farther.",
+  );
+  state.players[2].alive = false;
+  assert.equal(playbackPartySummary(state), "Everyone died");
+});
+test("theft and successive player actions each have a distinct window without stopping travel", () => {
+  const toast = (label) => ({ html: label, label, tone: "neutral" });
+  const timeline = mapPlaybackTimeline([
+    { step: 0, progress: 0, day: 1, hold: 0 },
+    {
+      step: 1,
+      progress: 0.1,
+      day: 2,
+      hold: 0,
+      player: 0,
+      toasts: [toast("Ada lost food to a thief")],
+    },
+    {
+      step: 1,
+      progress: 0.1,
+      day: 3,
+      hold: 0,
+      player: 1,
+      toasts: [toast("Bea gave clean water")],
+    },
+    {
+      step: 2,
+      progress: 0.2,
+      day: 4,
+      hold: 2300,
+      toasts: [toast("Wagon broke down")],
+    },
+  ]);
+  for (const cue of timeline.filter((c) => c.toasts?.length)) {
+    assert.ok(cue.end - cue.arrive >= PLAYBACK_TOAST_GAP);
+    assert.ok(cue.toastTimes.every((at) => at >= cue.arrive && at < cue.end));
+  }
+  assert.ok(timeline[1].end <= timeline[2].arrive);
+  const theft = timeline[1].arrive + 1000;
+  const water = timeline[2].arrive + 1000;
+  assert.equal(timeline.find((c) => theft < c.end).player, 0);
+  assert.equal(timeline.find((c) => water < c.end).player, 1);
+  assert.ok(
+    mapPlaybackProgress(timeline, water) > mapPlaybackProgress(timeline, theft),
+  );
+  const stop = timeline[3];
+  assert.equal(mapPlaybackProgress(timeline, stop.arrive + 1000), 0.2);
+});
+test("repair results immediately change the playback wagon icon while retaining the stop pause", async () => {
+  const { GameHistory } = await import(historySource);
+  for (const success of [false, true]) {
+    const g = new TrailGame(() => (success ? 0.7 : 0.1));
+    g.reset(["Ada", "Bea", "Cy"]);
+    g.state.count = 1;
+    g.state.run = [
+      {
+        id: 9990,
+        type: "calamity",
+        left: 1,
+        right: 1,
+        rotated: false,
+        journeyStep: 1,
+      },
+    ];
+    g.state.pending = "axle";
+    g.state.phase = "repair";
+    const history = new GameHistory({ getItem: () => null, setItem() {} });
+    history.capture(g.state, { type: "start" });
+    assert.ok(g.repair());
+    history.capture(g.state, { type: "repair", rolls: [success ? 5 : 1] });
+    const event = journeyMapEvents(g.state, history.archive.games[0])[1];
+    const action = event.actions[0];
+    assert.equal(action.wagonState, "broken");
+    assert.equal(action.wagonAfter, success ? "travel" : "broken");
+    const art = new Proxy({}, { get: (_, key) => `${String(key)}.webp` });
+    const html = journeyMap(
+      g.state,
+      { art, calamities: {}, portraits: [] },
+      history.archive.games[0],
+    );
+    const cues = JSON.parse(
+      html.match(
+        /<script type="application\/json" data-map-cues>([^]*?)<\/script>/,
+      )[1],
+    );
+    const cue = cues.find((c) =>
+      c.toasts?.some((t) => t.html.includes("attempted a repair")),
+    );
+    assert.equal(
+      cue.marker,
+      success ? "progressWagon.webp" : "mapStopped.webp",
+    );
+    assert.ok(cue.hold > 0);
+  }
+});
+test("roll outcomes appear once while additional consequences remain", () => {
+  const assets = { art: {}, calamities: {}, portraits: [] };
+  const action = {
+    day: 1,
+    turn: 1,
+    player: 0,
+    type: "repair",
+    action: "Attempted a repair",
+    text: [
+      "Broken axle: the repair failed. Supply one spare part within one round or the journey ends.",
+    ],
+    rolls: [2],
+    supplies: [],
+  };
+  for (const [type, roll, text, outcome] of [
+    ["repair", 2, action.text[0], "repair failed"],
+    [
+      "repair",
+      4,
+      "Broken axle: a lucky repair. The wagon can carry on.",
+      "repaired",
+    ],
+    [
+      "roll",
+      3,
+      "The crossing fails. The next traveller must try their luck.",
+      "crossing failed",
+    ],
+    ["roll", 2, "The crossing succeeds. You reached the far bank.", "crossed"],
+  ]) {
+    const a = { ...action, type, rolls: [roll], text: [text] };
+    const presentation = mapActionPresentation(a, fresh(), assets);
+    assert.deepEqual(presentation.results, []);
+    const toast = playbackToasts(a, fresh(), assets)[0].html;
+    assert.equal(toast.split(outcome).length - 1, 1);
+  }
+  const loss = {
+    ...action,
+    type: "roll",
+    rolls: [1],
+    text: ["The crossing fails. Ada lost food in the river."],
+    supplies: [{ player: 0, kind: "food", delta: -1 }],
+  };
+  assert.match(playbackToasts(loss, fresh(), assets)[0].html, /in the river/);
+});
+test("map river events use their river intensity, risk, and matching artwork", () => {
+  const art = new Proxy({}, { get: (_, key) => `${String(key)}.webp` });
+  const assets = {
+    art,
+    calamities: {},
+    portraits: [],
+    rivers: { moderate: "flowing.webp", raging: "raging.webp" },
+  };
+  for (const deadly of [false, true]) {
+    const state = fresh();
+    state.count = 1;
+    const card = {
+      id: 9980,
+      type: "river",
+      deadly,
+      left: 1,
+      right: 1,
+      rotated: false,
+      journeyStep: 1,
+    };
+    state.run = [card];
+    const title = deadly ? "Raging river crossing" : "Flowing river crossing";
+    assert.equal(journeyMapEvents(state)[1].title, title);
+    const html = journeyMap(state, assets);
+    const cues = JSON.parse(
+      html.match(
+        /<script type="application\/json" data-map-cues>([^]*?)<\/script>/,
+      )[1],
+    );
+    assert.equal(cues[1].image, deadly ? "raging.webp" : "flowing.webp");
+    const action = {
+      day: 1,
+      turn: 1,
+      player: 0,
+      type: "play",
+      card,
+      action: "Played River crossing",
+      text: [],
+      rolls: [],
+      supplies: [],
+    };
+    const played = playbackToasts(action, state, assets)[0].html;
+    assert.ok(
+      played.includes(deadly ? "risk of drowning" : "risk of supply loss"),
+    );
+    assert.ok(played.includes(deadly ? "raging.webp" : "flowing.webp"));
+    const rolled = playbackToasts(
+      { ...action, type: "roll", rolls: [3] },
+      state,
+      assets,
+    )[0].html;
+    assert.ok(
+      rolled.includes(
+        deadly ? "raging river crossing" : "flowing river crossing",
+      ),
+    );
+    assert.match(rolled, /crossing failed/);
+  }
+});
+test("map results are factual summaries without instructions or next-action prompts", () => {
+  const examples = [
+    [
+      "The wagon needs a repair. Try your luck after continuing.",
+      "The wagon needs a repair.",
+    ],
+    [
+      "Ada has typhoid. Supply water AND medicine before the round ends, or Ada dies.",
+      "Ada has typhoid.",
+    ],
+    [
+      "Ada has measles and must miss one turn. Medicine cures it; a second measles card kills Ada.",
+      "Ada has measles.",
+    ],
+    [
+      "Ada lost food in the river. The next traveller must try to cross.",
+      "Ada lost food in the river.",
+    ],
+    [
+      "Broken axle: the repair failed. Supply one spare part within one round or the journey ends.",
+      "Broken axle: the repair failed.",
+    ],
+    [
+      "Wagon stopped; replace the oxen before the round ends or everyone loses.",
+      "The wagon stopped.",
+    ],
+    [
+      "Only a town removes this. A second grass card kills the oxen.",
+      "The oxen lack grazing.",
+    ],
+    [
+      "Ada died of Dysentery. Their remaining supplies may be willed to companions.",
+      "Ada died of Dysentery.",
+    ],
+  ];
+  for (const [text, expected] of examples)
+    assert.equal(mapResultText(text), expected);
+  const action = {
+    day: 1,
+    turn: 1,
+    player: 0,
+    type: "play",
+    card: { type: "calamity" },
+    calamity: "axle",
+    action: "Played Calamity",
+    text: [examples[0][0]],
+    rolls: [],
+    supplies: [],
+  };
+  const assets = { art: {}, calamities: {}, portraits: [] };
+  const result = mapActionPresentation(action, fresh(), assets);
+  assert.match(result.action, /^played a /);
+  assert.deepEqual(result.results, [examples[0][1]]);
+  const toast = playbackToasts(action, fresh(), assets)[0];
+  assert.match(toast.html, /Broken axle[^]*The wagon needs a repair/);
+  assert.doesNotMatch(toast.html + toast.label, /Try your luck/);
+});
+test("map actions reveal the pulled calamity and playback includes action outcomes", async () => {
+  const { GameHistory } = await import(historySource);
+  const g = new TrailGame(() => 0.25);
+  g.reset(["Ada", "Bea", "Cy"]);
+  g.state.calamities = ["measles"];
+  g.state.players[0].hand = [
+    { id: 9999, type: "calamity", left: 1, right: 1, rotated: false },
+  ];
+  const history = new GameHistory({ getItem: () => null, setItem() {} });
+  history.capture(g.state, { type: "start" });
+  assert.ok(g.play(0));
+  history.capture(g.state, { type: "play", args: { play: "0" } });
+  const action = journeyMapEvents(g.state, history.archive.games[0])[1]
+    .actions[0];
+  assert.equal(action.calamity, "measles");
+  const art = new Proxy({}, { get: (_, key) => `${String(key)}.webp` });
+  const assets = {
+    art,
+    calamities: { measles: "measles.webp" },
+    portraits: [],
+  };
+  assert.match(
+    mapActionPresentation(action, g.state, assets).action,
+    /measles.webp[^]*Measles/,
+  );
+  assert.match(playbackToasts(action, g.state, assets)[0].html, /Measles/);
+  const cure = {
+    ...action,
+    type: "cure",
+    calamity: undefined,
+    action: "Gave Medicine to Ada",
+    text: ["Ada recovered from measles."],
+    supplies: [{ player: 0, kind: "medicine", delta: -1 }],
+  };
+  const toast = playbackToasts(cure, g.state, assets)[0].html;
+  assert.match(toast, /Ada recovered from measles/);
+  assert.equal((toast.match(/supply-change-bubble/g) ?? []).length, 1);
+  const roll = {
+    ...action,
+    type: "roll",
+    calamity: undefined,
+    action: "Attempted the crossing",
+    text: ["Ada lost food in the river."],
+    rolls: [1],
+    supplies: [{ player: 0, kind: "food", delta: -1 }],
+  };
+  const result = playbackToasts(roll, g.state, assets)[0].html;
+  assert.match(result, /crossing failed/);
+  assert.match(result, /in the river/);
+  assert.equal((result.match(/supply-change-bubble/g) ?? []).length, 1);
+});
 test("successive supply contributions become one event with all supplies and the final result", () => {
   const base = {
     turn: 4,
@@ -328,6 +723,26 @@ test("multi-turn crossings retain each player's own rolls and results", async ()
     ],
   );
   assert.equal(marker.player, 0);
+  assert.ok(marker.actions.every((a) => a.wagonState === "river"));
+  const rosterArt = new Proxy({}, { get: (_, key) => `${String(key)}.webp` });
+  const map = journeyMap(
+    g.state,
+    { art: rosterArt, calamities: {}, portraits: ["Ada", "Bea", "Cy"] },
+    h.archive.games[0],
+  );
+  const cues = JSON.parse(
+    map.match(
+      /<script type="application\/json" data-map-cues>([^]*?)<\/script>/,
+    )[1],
+  );
+  assert.deepEqual(
+    cues.filter((c) => c.step === 1).map((c) => c.player),
+    [0, 0, 1, 2],
+  );
+  assert.ok(
+    cues.filter((c) => c.step === 1).every((c) => c.living.length === 3),
+  );
+  assert.equal((map.match(/data-playback-player="/g) ?? []).length, 3);
   assert.deepEqual(
     markers
       .flatMap((m) => m.actions)
@@ -839,12 +1254,19 @@ test("map action graphics belong to the matching action words and each supply de
   assert.match(play.action, /^played <span class="map-inline-card">/);
 });
 
-test("map point titles prefer named settlements and specific calamities, including older recorded turns", async () => {
+test("map point titles use recorded settlement names and specific calamities", async () => {
   const { GameHistory } = await import(historySource);
   const g = new TrailGame(() => 0.25);
   g.reset(["Ada", "Bea", "Cy"]);
   g.state.players[0].hand = [
-    { id: 9000, type: "fort", left: 1, right: 1, rotated: false },
+    {
+      id: 9000,
+      type: "fort",
+      locationName: "Fort Cottonwood",
+      left: 1,
+      right: 1,
+      rotated: false,
+    },
   ];
   const history = new GameHistory(
     { getItem: () => null, setItem() {} },
@@ -907,7 +1329,7 @@ test("map point titles prefer named settlements and specific calamities, includi
   assert.deepEqual(history.archive, before);
 });
 
-test("playback travels through clear paths and pauses only for stops and stationary actions", () => {
+test("playback pauses for wagon states independently of player actions", () => {
   const event = {
     step: 1,
     title: "Quiet trail",
@@ -945,7 +1367,44 @@ test("playback travels through clear paths and pauses only for stops and station
     action,
   );
   assert.ok(river > 0 && river < broken);
-  assert.ok(playbackHold(event, { ...action, type: "draw" }) > 0);
+  assert.equal(playbackHold(event, { ...action, type: "draw" }), 0);
+  for (const type of [
+    "play",
+    "draw",
+    "skip",
+    "cure",
+    "trade",
+    "take",
+    "will-supplies",
+  ]) {
+    assert.equal(
+      playbackHold(event, { ...action, type, wagonState: "travel" }),
+      0,
+    );
+    assert.equal(
+      playbackHold(event, { ...action, type, wagonState: "broken" }),
+      2300,
+    );
+    assert.equal(
+      playbackHold(event, { ...action, type, wagonState: "river" }),
+      850,
+    );
+    assert.equal(
+      playbackHold(event, { ...action, type, wagonState: "settlement" }),
+      1800,
+    );
+  }
+  assert.equal(
+    playbackHold(
+      { ...event, kind: "wheel" },
+      { ...action, type: "skip", wagonState: "travel" },
+    ),
+    0,
+  );
+  assert.equal(
+    playbackHold(event, { ...action, deaths: [1], wagonState: "travel" }),
+    4200,
+  );
   const timeline = mapPlaybackTimeline([
     { step: 0, progress: 0, day: 1, hold: 0 },
     { step: 1, progress: 0.1, day: 2, hold: 0 },

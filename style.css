@@ -8248,9 +8248,7 @@ body.timeline-compact .trail-afflicted {
   max-width: min(360px, calc(100vw - 44px));
   box-sizing: border-box;
   transform-origin: center top;
-  transition:
-    transform 300ms ease,
-    opacity 300ms ease;
+  transition: transform 300ms ease;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -8275,6 +8273,18 @@ body.timeline-compact .trail-afflicted {
 }
 .map-playback-toast.tone-negative {
   color: #964f3b;
+}
+.map-action-calamity {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  vertical-align: middle;
+}
+.map-action-calamity img {
+  width: 27px;
+  height: 27px;
+  object-fit: cover;
+  border-radius: 3px;
 }
 .map-playback-toast.tone-positive {
   color: #536b43;
@@ -8377,4 +8387,171 @@ body.timeline-compact .trail-afflicted {
 .map-event-dot.map-stop-river {
   fill: #587d8b;
   stroke: #f6efd9;
+}
+.map-playback-roster {
+  padding-top: 7px;
+  margin-top: 7px;
+  border-top: 1px solid #81775b33;
+}
+.playback-player-portraits {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+}
+.playback-player {
+  position: relative;
+  display: flex;
+  border-radius: 50%;
+  padding: 2px;
+  border: 2px solid transparent;
+  transition:
+    border-color 220ms,
+    background 220ms;
+  pointer-events: auto;
+}
+.playback-player .portrait {
+  width: 30px;
+  height: 30px;
+  flex-basis: 30px;
+}
+.playback-player.is-active {
+  border-color: #65794f;
+  background: #e4d7ad;
+}
+.playback-player-grave {
+  display: none;
+  position: absolute;
+  right: -4px;
+  bottom: -3px;
+  z-index: 2;
+  width: 18px;
+  height: 22px;
+  object-fit: contain;
+  filter: grayscale(1);
+}
+.playback-player.is-dead .portrait {
+  filter: grayscale(1);
+}
+.playback-player.is-dead .playback-player-grave {
+  display: block;
+}
+.playback-player-turn {
+  display: none;
+  position: absolute;
+  bottom: -4px;
+  right: -4px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #65794f;
+  color: #fff4da;
+  font:
+    12px/14px Georgia,
+    serif;
+  text-align: center;
+}
+.playback-player.is-active .playback-player-turn {
+  display: block;
+}
+[data-playback-player-label] {
+  display: block;
+  margin-top: 5px;
+  font-size: 11px;
+  color: var(--ink);
+}
+@media (max-width: 600px) {
+  .playback-player-portraits {
+    gap: 4px;
+  }
+  .playback-player .portrait {
+    width: 26px;
+    height: 26px;
+    flex-basis: 26px;
+  }
+  .playback-player-grave {
+    width: 16px;
+    height: 20px;
+  }
+}
+
+.map-playback-date .playback-player-portraits {
+  justify-content: center;
+}
+@media (max-width: 900px) {
+  .map-playback-date {
+    top: 76px;
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+    width: max-content;
+    max-width: calc(100% - 24px);
+  }
+  .geographic-map .map-tools {
+    top: 236px;
+    right: 10px;
+  }
+}
+
+[data-playback-player-label]:empty {
+  display: none;
+}
+.map-playback-callout.is-death-event {
+  z-index: 13;
+  width: 290px;
+  border-color: #6f6d61;
+  background: #ede6d4 url("./assets/paper.webp");
+}
+.playback-death-event .map-event-memorial {
+  width: 250px;
+  margin: 4px auto;
+}
+.playback-death-event .memorial-inscription > h3 {
+  font-size: 19px;
+}
+.playback-death-event .memorial-epitaph {
+  font-size: 12px;
+}
+@media (max-width: 600px) {
+  .map-playback-callout.is-death-event {
+    width: 250px;
+  }
+  .playback-death-event .map-event-memorial {
+    width: 220px;
+  }
+  .playback-death-event .memorial-inscription > h3 {
+    font-size: 17px;
+  }
+  .playback-death-event .memorial-epitaph {
+    font-size: 11px;
+  }
+}
+.journey-map-tooltip:has(.map-roster-tooltip) {
+  width: 290px;
+}
+.map-roster-tooltip .map-event-heading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.map-roster-tooltip .portrait {
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+}
+.map-roster-tooltip > small {
+  display: block;
+  margin: 8px 0;
+  color: var(--quiet);
+}
+.map-roster-tooltip p {
+  margin: 7px 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.playback-player:focus-visible {
+  outline: 2px solid var(--sage);
+  outline-offset: 3px;
+}
+.geographic-map img.faces-west {
+  transform: scaleX(-1);
 }

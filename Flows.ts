@@ -134,7 +134,7 @@ export function buildFlowGraph(
           `cards-${stage}`,
           1,
           stage === 5
-            ? "50 cards · Oregon"
+            ? "50 cards — Oregon"
             : `${stage * 10}–${stage * 10 + 9} trail cards`,
           "neutral",
           stage,

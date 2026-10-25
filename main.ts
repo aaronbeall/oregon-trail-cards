@@ -35,12 +35,7 @@ import { reconcile } from "./Render";
 import { advanceSimulation } from "./Simulation";
 import type { FlowMode } from "./Flows";
 import { supplyEmblem, supplyColor, supplyCollectionEmblem } from "./Supplies";
-import {
-  GameHistory,
-  replayGame,
-  calendarReplay,
-  type GameAction,
-} from "./History";
+import { GameHistory, replayGame, type GameAction } from "./History";
 import {
   gameStatistics,
   summarizeJourneys,
@@ -67,7 +62,6 @@ let saved;
 try {
   saved = readSave(localStorage.getItem(key));
 } catch {}
-const savedDayMissing = !!saved && saved.day === undefined;
 const pendingRolls: number[] = [];
 let revealedCalamity: Calamity | undefined;
 let game = new TrailGame(
@@ -78,22 +72,6 @@ let game = new TrailGame(
     revealedCalamity = kind;
   },
 );
-// Preserve remedies recorded by older UI versions without replacing the visit title.
-for (const report of Object.values(game.state.trailReports ?? {})) {
-  const remedy = (Object.keys(titles) as Calamity[]).find(
-    (kind) =>
-      report.title === `${titles[kind]} · remedied` ||
-      report.title === `${titles[kind]} remedied`,
-  );
-  if (remedy) {
-    (report.remedies ??= []).push(remedy);
-    report.title = report.calamity
-      ? titles[report.calamity]
-      : report.card
-        ? label(report.card)
-        : titles[remedy];
-  }
-}
 const app = document.querySelector<HTMLElement>("#app")!;
 const escape = (s: string) =>
   s.replace(
@@ -204,27 +182,6 @@ let setup = !game.state.started,
 let history: GameHistory | undefined;
 try {
   history = new GameHistory(localStorage);
-  if (savedDayMissing) {
-    const active = history.archive.games.find(
-      (record) => record.id === history!.archive.active,
-    );
-    if (active) {
-      const projected = calendarReplay(active).state;
-      if (
-        projected.turn === game.state.turn &&
-        projected.count === game.state.count
-      ) {
-        game.state.day = projected.day;
-        projected.players.forEach((person, index) => {
-          if (!person.alive)
-            Object.assign(game.state.players[index], {
-              deathDay: person.deathDay,
-              deathDate: person.deathDate,
-            });
-        });
-      }
-    }
-  }
 } catch {
   storageAvailable = false;
 }
@@ -1156,7 +1113,7 @@ function journeyPreviewArtwork(state: Journey): SceneArt {
 function wagonState() {
   const conditions = game.state.hazards.filter((h) => wagonKinds.has(h.kind));
   return conditions.length
-    ? `<div class="wagon-state" aria-label="Wagon condition"><p class="eyebrow">Wagon conditions</p><div class="wagon-condition-list">${conditions.map((h) => `<button class="wagon-condition severity-${hazardSeverity(h)}" data-ui-key="wagon-condition-${h.id}" data-wagon-preview data-hazard-id="${h.id}" aria-label="${titles[h.kind]}: wagon condition and remedies"><img src="${calamityArt[h.kind]}" alt=""><span>${titles[h.kind]}<small>${h.rounds !== null ? `${h.rounds} round${h.rounds === 1 ? "" : "s"} left · journey at risk` : h.kind === "grass" ? "Next grass calamity: oxen die" : "Next bad water: oxen die"}</small></span></button>`).join("")}</div></div>`
+    ? `<div class="wagon-state" aria-label="Wagon condition"><p class="eyebrow">Wagon conditions</p><div class="wagon-condition-list">${conditions.map((h) => `<button class="wagon-condition severity-${hazardSeverity(h)}" data-ui-key="wagon-condition-${h.id}" data-wagon-preview data-hazard-id="${h.id}" aria-label="${titles[h.kind]}: wagon condition and remedies"><img src="${calamityArt[h.kind]}" alt=""><span>${titles[h.kind]}<small>${h.rounds !== null ? `${h.rounds} round${h.rounds === 1 ? "" : "s"} left — journey at risk` : h.kind === "grass" ? "Next grass calamity: oxen die" : "Next bad water: oxen die"}</small></span></button>`).join("")}</div></div>`
     : "";
 }
 function remedyDescription(h: Hazard) {
@@ -1684,7 +1641,7 @@ function restoreTimelineOwners() {
             next.hazards.some((h) => h.id === hazard.id)
               ? `${wagonKinds.has(hazard.kind) ? "The wagon" : previous.players[hazard.owner].name} still needs more supplies to resolve ${titles[hazard.kind].toLowerCase()}.`
               : wagonKinds.has(hazard.kind)
-                ? "This wagon condition is no longer active."
+                ? "The wagon is ready to roll again."
                 : `${previous.players[hazard.owner].name} no longer has ${titles[hazard.kind].toLowerCase()}.`,
           );
       }
@@ -1811,7 +1768,7 @@ function trailReportTitle(report: TrailReport | undefined, c?: TrailCard) {
       report.attempts === 0 ||
       (!report.scene &&
         !report.attempts &&
-        !/^River · (not crossed|drowning)\s*\(/.test(report.title))
+        !/^River — (not crossed|drowning)\s*\(/.test(report.title))
     )
       return "River crossing";
     if (report.scene === "success") {
@@ -1820,7 +1777,7 @@ function trailReportTitle(report: TrailReport | undefined, c?: TrailCard) {
     }
     if (
       ["attempt", "loss", "drowning"].includes(report.scene ?? "") ||
-      /^River · (not crossed|drowning)\s*\(/.test(report.title)
+      /^River — (not crossed|drowning)\s*\(/.test(report.title)
     )
       return "River crossing failed";
   }
@@ -1939,7 +1896,7 @@ function trailOutcomes(reports: TrailReport[]) {
               items
                 .slice(3)
                 .map((item) => item.description)
-                .join(" · "),
+                .join(" — "),
             )}">+${items.length - 3}</button>`
           : ""
       }</div>`
@@ -1970,14 +1927,14 @@ function playerPreviewContent(row: HTMLElement) {
         : s.status === "lost"
           ? `The journey ends ${remaining} trail card${remaining === 1 ? "" : "s"} short of Oregon. The valley waits beyond the trail.`
           : `${remaining} trail card${remaining === 1 ? "" : "s"} to go. Beyond the last bend, Oregon City and the Willamette Valley await.`;
-    return `<img class="trail-summary-art" src="${art.victory}" alt="A welcoming Oregon homestead"><strong class="tooltip-title">${s.status === "won" ? "Arrived in Oregon" : "Oregon · Willamette Valley"}</strong><p>${escape(text)}</p>`;
+    return `<img class="trail-summary-art" src="${art.victory}" alt="A welcoming Oregon homestead"><strong class="tooltip-title">${s.status === "won" ? "Arrived in Oregon" : "Oregon — Willamette Valley"}</strong><p>${escape(text)}</p>`;
   }
   if (row.hasAttribute("data-trail-summary")) {
     const s = game.state;
     const days = journeyDay(s) - 1;
     const conditions = s.hazards.filter((h) => wagonKinds.has(h.kind));
     const scene = journeyPreviewArtwork(s);
-    return `<img class="trail-summary-art" src="${scene.src}" alt="${escape(scene.alt)}"><strong class="tooltip-title">The trail so far</strong><p>${calendarDate(journeyDate(days, s.startDate))}<br>${days} day${days === 1 ? "" : "s"} on the trail</p><div class="trail-summary-progress" aria-hidden="true"><span style="width:${s.count * 2}%"></span></div><p>${s.count} of 50 trail cards · ${Math.max(0, 50 - s.count)} to Oregon</p>${s.phase === "river" ? `<p>River crossing pending.</p>` : s.phase === "repair" && s.pending ? `<p>${escape(titles[s.pending])}: repair pending.</p>` : ""}${conditions.map((h) => `<div class="trail-summary-condition"><img src="${calamityArt[h.kind]}" alt=""><span>${escape(conditionDescription(h.kind, h.owner))}</span></div>`).join("")}`;
+    return `<img class="trail-summary-art" src="${scene.src}" alt="${escape(scene.alt)}"><strong class="tooltip-title">The trail so far</strong><p>${calendarDate(journeyDate(days, s.startDate))}<br>${days} day${days === 1 ? "" : "s"} on the trail</p><div class="trail-summary-progress" aria-hidden="true"><span style="width:${s.count * 2}%"></span></div><p>${s.count} of 50 trail cards — ${Math.max(0, 50 - s.count)} to Oregon</p>${s.phase === "river" ? `<p>River crossing pending.</p>` : s.phase === "repair" && s.pending ? `<p>${escape(titles[s.pending])}: repair pending.</p>` : ""}${conditions.map((h) => `<div class="trail-summary-condition"><img src="${calamityArt[h.kind]}" alt=""><span>${escape(conditionDescription(h.kind, h.owner))}</span></div>`).join("")}`;
   }
   if (row.hasAttribute("data-wagon-preview")) {
     const hazard = game.state.hazards.find(
@@ -2007,10 +1964,10 @@ function playerPreviewContent(row: HTMLElement) {
       const count = player.supplies.filter((k) => k === supply).length;
       return count ? [supplyEmblem(supply, count, true)] : [];
     });
-    return `<strong class="tooltip-title">${portraitImage(player.portrait ?? index % 6)}<span>${escape(player.name)}${index === game.state.current && player.alive ? " · current turn" : ""}</span></strong>${player.birthday ? `<p>Born ${calendarDate(player.birthday)}</p>` : ""}${
+    return `<strong class="tooltip-title">${portraitImage(player.portrait ?? index % 6)}<span>${escape(player.name)}${index === game.state.current && player.alive ? " — current turn" : ""}</span></strong>${player.birthday ? `<p>Born ${calendarDate(player.birthday)}</p>` : ""}${
       !player.alive
         ? `<div class="player-summary-death"><img src="${art.tombstoneIcon}" alt=""><p>Died ${player.deathDate ? calendarDate(player.deathDate) : "on the trail"}${player.deathCause ? `: ${escape(player.deathCause)}` : ""}.${player.deathDay !== undefined ? ` ${player.deathDay} days into the journey.` : ""}<br><em>${escape(player.epitaph)}</em></p></div>`
-        : `<section class="player-summary-section"><h4>Trail cards · ${player.hand.length}</h4>${player.hand.length ? `<div class="player-hand-preview">${player.hand.map((c) => `<div>${card(c)}<span>${escape(label(c))}</span></div>`).join("")}</div>` : `<p>No trail cards in hand.</p>`}</section><section class="player-summary-section"><h4>Supplies · ${player.supplies.length}</h4><div class="player-supply-preview">${supplies.join("") || "No supplies left."}</div></section><section class="player-summary-section"><h4>Health</h4>${
+        : `<section class="player-summary-section"><h4>Trail cards (${player.hand.length})</h4>${player.hand.length ? `<div class="player-hand-preview">${player.hand.map((c) => `<div>${card(c)}<span>${escape(label(c))}</span></div>`).join("")}</div>` : `<p>No trail cards in hand.</p>`}</section><section class="player-summary-section"><h4>Supplies (${player.supplies.length})</h4><div class="player-supply-preview">${supplies.join("") || "No supplies left."}</div></section><section class="player-summary-section"><h4>Health</h4>${
             conditions.length
               ? conditions
                   .map(
@@ -2213,28 +2170,8 @@ function recordTrailResult(
       : undefined;
   if (played) {
     played.journeyStep = s.count;
-    // Seed visible older cards before storing the new visit; snapshots survive deck recycling.
-    const reports = (s.trailReports ??= {});
-    before.run.forEach((c, offset) => {
-      const step =
-        c.journeyStep ?? before.count - before.run.length + offset + 1;
-      const report = (reports[step] ??= {
-        title: label(c),
-        losses: 0,
-        gains: {},
-        deaths: [],
-      });
-      report.card ??= { ...c, journeyStep: step };
-    });
   }
   const previousTop = before.run.at(-1);
-  if (!played && previousTop && !previousTop.journeyStep && before.count) {
-    const currentTop = s.run.at(-1);
-    // A resumed journey may predate trail reports; attach new outcomes to its exposed card.
-    const actual = s.run.find((c) => c.id === previousTop.id) ?? currentTop;
-    if (actual) actual.journeyStep = before.count;
-    previousTop.journeyStep = before.count;
-  }
   const remedy = before.hazards.find((h) => h.id === Number(d.cure ?? d.town));
   const step =
     remedy?.trailStep ?? played?.journeyStep ?? previousTop?.journeyStep;
@@ -2402,7 +2339,7 @@ function trail() {
     const c = report?.card ?? fallback;
     return `<div class="trail-piece ${step === activeStep && s.status === "travel" ? "active-connection" : ""}" data-ui-key="trail-step-${step}" tabindex="0" data-trail-results="${escape(JSON.stringify([timelineDescription(report, c)]))}" ${report?.playedBy !== undefined ? `data-trail-player="${report.playedBy}"` : ""} aria-label="Trail card ${step}${step === activeStep ? ", active connection" : ""}">${c ? card(c, reportArtwork(report, c), ["town", "fort"].includes(c.type) ? settlementStubs(timelineCardAt(step - 1), timelineCardAt(step + 1), step === 1) : "") : `<div class="earlier-trail"><img src="${art.trail}" alt="Earlier stretch of trail"></div>`}${trailPlayerBadge(report)}<small>${escape(trailReportTitle(report, c))}</small>${trailOutcomes(report ? [report] : [])}</div>`;
   }).join("");
-  return `<section class="trail-area" aria-label="Journey trail"><div class="section-line"><h2>The trail so far</h2><button type="button" class="trail-compact-date" data-trail-summary aria-label="Trail summary for ${calendarDate(journeyDate(journeyDay(s) - 1, s.startDate))}"><time datetime="${journeyDate(journeyDay(s) - 1, s.startDate)}">${calendarDate(journeyDate(journeyDay(s) - 1, s.startDate))}</time></button><span class="journey-calendar">${calendarDate(journeyDate(journeyDay(s) - 1, s.startDate))} · ${journeyDay(s) - 1} day${journeyDay(s) === 2 ? "" : "s"} on the trail</span><button class="trail-return" data-action="trail-end" aria-label="Back to end of trail" title="Back to end of trail" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12h12m-5-5 5 5-5 5M20 5v14"/></svg></button></div><div class="map-track" data-ui-static role="progressbar" aria-label="Journey progress" aria-valuemin="0" aria-valuemax="50" aria-valuenow="${s.count}"><span style="width:${s.count * 2}%"><button type="button" class="progress-wagon" data-trail-summary aria-label="Show trail summary"><img src="${art.progressWagon}" alt=""></button></span></div><div class="trail-body"><div class="trail-route"><div class="trail-strip"><div class="trail-start" data-ui-key="trail-start" tabindex="0" data-trail-results="${escape(JSON.stringify(["Your journey begins in Independence, Missouri. The wagon is packed, the kettle is rattling, and Oregon waits at the far end of fifty trail cards."]))}" aria-label="Journey starts in Independence, Missouri"><div class="start-art"><img src="${art.independence}" alt="A wagon departing the frontier town of Independence"><span class="start-badge">START</span></div><strong>Independence</strong><small>Missouri</small></div>${entries}<div class="trail-marker ${s.status === "won" ? "arrived" : ""}" data-ui-key="trail-finish" data-trail-finish tabindex="0" style="--finish-progress:${s.count / 50};--finish-dots:${Math.ceil((50 - s.count) / 5)}" aria-label="${s.status === "won" ? "Arrived in Oregon" : "Destination: Oregon"}"><div class="finish-destination"><div class="finish-art"><img src="${art.landscape}" alt="Quiet hills and a wagon at the journey’s destination"><span class="finish-badge"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 14V2m0 0h9l-2 3 2 3H3"/></svg>${s.status === "won" ? "ARRIVED" : "FINISH"}</span></div><strong>Oregon</strong><small>Willamette Valley</small></div></div></div></div>${wagonState()}</div><button type="button" class="top-expand-tab" data-action="expand-top" aria-label="Expand top section" title="Expand top section"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button></section>`;
+  return `<section class="trail-area" aria-label="Journey trail"><div class="section-line"><h2>The trail so far</h2><button type="button" class="trail-compact-date" data-trail-summary aria-label="Trail summary for ${calendarDate(journeyDate(journeyDay(s) - 1, s.startDate))}"><time datetime="${journeyDate(journeyDay(s) - 1, s.startDate)}">${calendarDate(journeyDate(journeyDay(s) - 1, s.startDate))}</time></button><span class="journey-calendar">${calendarDate(journeyDate(journeyDay(s) - 1, s.startDate))} — ${journeyDay(s) - 1} day${journeyDay(s) === 2 ? "" : "s"} on the trail</span><button class="trail-return" data-action="trail-end" aria-label="Back to end of trail" title="Back to end of trail" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12h12m-5-5 5 5-5 5M20 5v14"/></svg></button></div><div class="map-track" data-ui-static role="progressbar" aria-label="Journey progress" aria-valuemin="0" aria-valuemax="50" aria-valuenow="${s.count}"><span style="width:${s.count * 2}%"><button type="button" class="progress-wagon" data-trail-summary aria-label="Show trail summary"><img src="${art.progressWagon}" alt=""></button></span></div><div class="trail-body"><div class="trail-route"><div class="trail-strip"><div class="trail-start" data-ui-key="trail-start" tabindex="0" data-trail-results="${escape(JSON.stringify(["Your journey begins in Independence, Missouri. The wagon is packed, the kettle is rattling, and Oregon waits at the far end of fifty trail cards."]))}" aria-label="Journey starts in Independence, Missouri"><div class="start-art"><img src="${art.independence}" alt="A wagon departing the frontier town of Independence"><span class="start-badge">START</span></div><strong>Independence</strong><small>Missouri</small></div>${entries}<div class="trail-marker ${s.status === "won" ? "arrived" : ""}" data-ui-key="trail-finish" data-trail-finish tabindex="0" style="--finish-progress:${s.count / 50};--finish-dots:${Math.ceil((50 - s.count) / 5)}" aria-label="${s.status === "won" ? "Arrived in Oregon" : "Destination: Oregon"}"><div class="finish-destination"><div class="finish-art"><img src="${art.landscape}" alt="Quiet hills and a wagon at the journey’s destination"><span class="finish-badge"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 14V2m0 0h9l-2 3 2 3H3"/></svg>${s.status === "won" ? "ARRIVED" : "FINISH"}</span></div><strong>Oregon</strong><small>Willamette Valley</small></div></div></div></div>${wagonState()}</div><button type="button" class="top-expand-tab" data-action="expand-top" aria-label="Expand top section" title="Expand top section"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button></section>`;
 }
 const outcomeNames: Record<Outcome, string> = {
   won: "Reached Oregon",
@@ -2438,7 +2375,7 @@ function simulationScreen() {
         ? "Oregon. Against the odds."
         : "Well. The prairie won."
       : "The wagon is taking a breather.";
-  return `<header><div><p class="eyebrow">The unattended expedition</p><h1>Journey <i>simulation</i></h1></div><div class="header-actions">${navigationIcons()}</div></header><main class="simulation-screen decision" data-simulation-status="${simulationRunning ? "running" : finished ? "complete" : "stopped"}"><img class="simulation-art" src="${finished ? (won ? art.victory : art.defeat) : art.landscape}" alt="${finished ? (won ? "The wagon has reached Oregon" : "The trail has fallen silent") : "A wagon setting out across the prairie"}"><div class="simulation-copy"><span class="journey-mode-tag">Simulated journey</span><h2 tabindex="-1">${title}</h2><p class="simulation-message" role="status">${escape(simulationRunning ? s.note : simulationError || s.note)}</p><div class="simulation-progress" role="progressbar" aria-label="Journey progress" aria-valuenow="${s.count}" aria-valuemin="0" aria-valuemax="50"><span style="width:${s.count * 2}%"></span></div><div class="simulation-totals"><span><strong>${s.count}/50</strong>trail cards</span><span><strong>${Math.max(0, journeyDay(s) - 1)}</strong>days on the trail</span><span><strong>${living}/${s.players.length}</strong>travellers alive</span></div>${!simulationRunning ? `<div class="simulation-party">${s.players.map((p, i) => `<div>${p.alive ? portraitImage(p.portrait ?? i) : `<img src="${art.tombstoneIcon}" alt="Gravestone">`}<span><strong>${escape(p.name)}</strong><small>${p.alive ? "Still standing" : escape(p.deathCause ?? "Lost on the trail")}</small></span></div>`).join("")}</div>${finished ? renderJourneyMapPreview(s) : `<button data-action="simulation-resume">Continue simulation →</button>`}<div class="simulation-actions">${button("journeys", "Your journeys")}${button("new", "Another journey →")}</div>` : `<small class="simulation-running-note">${s.simulationActions ?? 0} decisions · No steering required</small>`}</div></main>${siteCredit()}`;
+  return `<header><div><p class="eyebrow">The unattended expedition</p><h1>Journey <i>simulation</i></h1></div><div class="header-actions">${navigationIcons()}</div></header><main class="simulation-screen decision" data-simulation-status="${simulationRunning ? "running" : finished ? "complete" : "stopped"}"><img class="simulation-art" src="${finished ? (won ? art.victory : art.defeat) : art.landscape}" alt="${finished ? (won ? "The wagon has reached Oregon" : "The trail has fallen silent") : "A wagon setting out across the prairie"}"><div class="simulation-copy"><span class="journey-mode-tag">Simulated journey</span><h2 tabindex="-1">${title}</h2><p class="simulation-message" role="status">${escape(simulationRunning ? s.note : simulationError || s.note)}</p><div class="simulation-progress" role="progressbar" aria-label="Journey progress" aria-valuenow="${s.count}" aria-valuemin="0" aria-valuemax="50"><span style="width:${s.count * 2}%"></span></div><div class="simulation-totals"><span><strong>${s.count}/50</strong>trail cards</span><span><strong>${Math.max(0, journeyDay(s) - 1)}</strong>days on the trail</span><span><strong>${living}/${s.players.length}</strong>travellers alive</span></div>${!simulationRunning ? `<div class="simulation-party">${s.players.map((p, i) => `<div>${p.alive ? portraitImage(p.portrait ?? i) : `<img src="${art.tombstoneIcon}" alt="Gravestone">`}<span><strong>${escape(p.name)}</strong><small>${p.alive ? "Still standing" : escape(p.deathCause ?? "Lost on the trail")}</small></span></div>`).join("")}</div>${finished ? renderJourneyMapPreview(s) : `<button data-action="simulation-resume">Continue simulation →</button>`}<div class="simulation-actions">${button("journeys", "Your journeys")}${button("new", "Another journey →")}</div>` : `<small class="simulation-running-note">${s.simulationActions ?? 0} decisions — No steering required</small>`}</div></main>${siteCredit()}`;
 }
 async function startSimulation() {
   if (!setup || party.some((p) => !p.name.trim())) {
@@ -2563,10 +2500,10 @@ async function runSimulation() {
   }
 }
 function siteCredit() {
-  return `<div class="site-credit">© ${new Date().getFullYear()} · Made with ❤️ and 🍌 by <a href="https://www.metamodernmonkey.com/" target="_blank" rel="noopener noreferrer">Meta Modern Monkey</a></div>`;
+  return `<div class="site-credit">© ${new Date().getFullYear()} — Made with ❤️ and 🍌 by <a href="https://www.metamodernmonkey.com/" target="_blank" rel="noopener noreferrer">Meta Modern Monkey</a></div>`;
 }
 function welcomeScreen() {
-  return `<section class="decision welcome-screen" aria-labelledby="welcome-heading"><div class="welcome-art"><img src="${art.landscape}" alt="A covered wagon waiting beneath wide prairie skies"><span class="welcome-ticket"><span>Westward—to Oregon or bust</span><small>Probably die</small></span></div><div class="welcome-copy"><p class="eyebrow">Independence, Missouri · Spring 1847</p><h2 id="welcome-heading">This wagon won’t<br>pack itself.</h2><p>The road is long. The company is yours.<br>The oxen have made no promises.</p>${button("new", "Gather your travellers →")}<small>Play solo or local co-op · 2–6 travellers, one rather hopeful wagon</small></div></section>`;
+  return `<section class="decision welcome-screen" aria-labelledby="welcome-heading"><div class="welcome-art"><img src="${art.landscape}" alt="A covered wagon waiting beneath wide prairie skies"><span class="welcome-ticket"><span>Westward—to Oregon or bust</span><small>Probably die</small></span></div><div class="welcome-copy"><p class="eyebrow">Independence, Missouri — Spring 1847</p><h2 id="welcome-heading">This wagon won’t<br>pack itself.</h2><p>The road is long. The company is yours.<br>The oxen have made no promises.</p>${button("new", "Gather your travellers →")}<small>Play solo or local co-op — 2–6 travellers, one rather hopeful wagon</small></div></section>`;
 }
 function journeyModeFilter(
   scope: "journeys" | "statistics",
@@ -2577,7 +2514,7 @@ function journeyModeFilter(
 }
 function journeysScreen() {
   if (!history?.archive.games.length)
-    return `<header><div><p class="eyebrow">A cooperative westward wander · 2–6 players</p><h1>Oregon Trail <i>Cards</i></h1></div></header><main class="journey-browser">${welcomeScreen()}</main>`;
+    return `<header><div><p class="eyebrow">A cooperative westward wander — 2–6 players</p><h1>Oregon Trail <i>Cards</i></h1></div></header><main class="journey-browser">${welcomeScreen()}</main>`;
   const data = loadStatisticsData(journeysMode);
   const records = data.games
     .map((record) => ({
@@ -2603,7 +2540,7 @@ function journeysScreen() {
                   year: "numeric",
                 })
               : "Saved journey";
-            const state = raw ? calendarReplay(raw).state : undefined;
+            const state = raw ? replayGame(raw) : undefined;
             const scene = state
               ? journeyPreviewArtwork(state)
               : { src: art.landscape, alt: "A wagon on the prairie" };
@@ -2622,7 +2559,7 @@ function loadStatisticsData(mode: JourneyModeFilter = "all") {
     statisticsSkipped = 0;
     const records = (history?.archive.games ?? []).flatMap((record) => {
       try {
-        return [{ record, state: calendarReplay(record).state }];
+        return [{ record, state: replayGame(record) }];
       } catch {
         statisticsSkipped++;
         return [];
@@ -2644,6 +2581,7 @@ function renderJourneyMap(
     {
       art,
       calamities: calamityArt,
+      rivers: riverArt,
       portraits: state.players.map((p, i) =>
         portraitImage(p.portrait ?? i % 6),
       ),
@@ -2655,7 +2593,7 @@ function renderJourneyMapPreview(state: Journey, finale = false) {
   if (!history?.archive.active) return "";
   return journeyMapPreview(
     state,
-    { art, calamities: calamityArt, portraits: [] },
+    { art, calamities: calamityArt, rivers: riverArt, portraits: [] },
     finale
       ? "disabled"
       : `data-view-journey="${escape(history.archive.active)}"`,
@@ -2667,7 +2605,7 @@ function journeyMapScreen() {
     (r) => r.id === selectedJourneyMap,
   );
   if (!record) return statisticsScreen();
-  const state = calendarReplay(record).state;
+  const state = replayGame(record);
   const number = history!.archive.games.indexOf(record) + 1;
   return `<main class="journey-atlas-view" data-ui-key="atlas-${escape(record.id)}"><header class="atlas-toolbar"><button data-map-back>← ${mapReturnView === "journey" ? "Back to journey" : "Statistics"}</button><div><h1>Journey ${number}</h1>${record.simulated ? '<span class="journey-mode-tag">Simulated</span>' : ""}<span class="stats-outcome-tag stats-tag-${record.outcome}">${outcomeNames[record.outcome]}</span></div><span class="atlas-route-label">Independence → Oregon City</span><button data-open-journey="${escape(record.id)}">${state.status === "travel" ? "Continue journey" : "Final result"} →</button></header>${!record.completeFromStart ? '<p class="map-partial">Some earlier turn details were not recorded.</p>' : ""}${renderJourneyMap(state, record)}</main>`;
 }
@@ -2710,7 +2648,7 @@ function batchLab() {
           `<option value="${n}" ${selected === n ? "selected" : ""}>${n}</option>`,
       )
       .join("");
-  return `<section class="batch-lab" aria-labelledby="batch-heading"><button type="button" class="stats-panel-heading batch-lab-toggle" data-batch-toggle aria-expanded="${batchExpanded}" aria-controls="batch-content"><span class="batch-lab-title" id="batch-heading">Simulation lab</span><span class="batch-lab-caption">${batchRunning && progress ? `${progress.attempted.toLocaleString()} / ${progress.requested.toLocaleString()} runs` : "Temporary · never saved"}<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m5 7 5 5 5-5"/></svg></span></button><div class="batch-lab-fold ${batchExpanded ? "is-expanded" : ""}"><div class="batch-lab-content" id="batch-content" ${batchExpanded ? "" : "inert"}><form id="batch-form"><div class="batch-config"><label>Runs<input id="batch-count" type="number" min="1" max="10000" step="1" required value="${batchConfig.count}" ${batchRunning ? "disabled" : ""}></label><div class="batch-player-range"><label>Min players<select id="batch-min-players" ${batchRunning ? "disabled" : ""}>${playerOptions(batchConfig.minPlayers)}</select></label><span aria-hidden="true">–</span><label>Max players<select id="batch-max-players" ${batchRunning ? "disabled" : ""}>${playerOptions(batchConfig.maxPlayers)}</select></label></div><button type="button" data-batch-run ${batchRunning ? "disabled" : ""}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">${computerIcon}</svg>Run simulations</button>${batchRunning ? `<button type="button" data-batch-cancel ${batchStopping ? "disabled" : ""}>${batchStopping ? "Stopping…" : "Stop batch"}</button>` : hasBatch ? '<button type="button" data-batch-clear>Clear dataset</button>' : ""}</div></form><p class="batch-explanation">Player count is picked randomly within your range. Every run shuffles starting hands, supplies and decks, then rolls its own fate.</p>${batchError ? `<p class="batch-error" role="alert">${escape(batchError)}</p>` : ""}${progress ? `<div class="batch-progress" role="progressbar" aria-label="Simulation batch progress" aria-valuemin="0" aria-valuemax="${progress.requested}" aria-valuenow="${progress.attempted}"><span style="width:${(progress.attempted / progress.requested) * 100}%"></span></div><div class="batch-progress-summary" role="status"><strong>${batchRunning ? (batchStopping ? "Stopping" : "Running") : batchDataset ? (batchDataset.cancelled ? "Stopped" : "Complete") : batchError ? "Paused" : "Complete"} · ${progress.attempted.toLocaleString()} / ${progress.requested.toLocaleString()}</strong><span>${progress.wins.toLocaleString()} reached Oregon · ${progress.losses.toLocaleString()} lost${progress.skipped ? ` · ${progress.skipped} action-limit runs excluded` : ""}</span></div>` : ""}</div></div></section>${hasBatch ? `<div class="statistics-source" role="group" aria-label="Statistics dataset"><button type="button" data-statistics-source="saved" aria-pressed="${statisticsSource === "saved"}">Saved journeys</button><button type="button" data-statistics-source="batch" aria-pressed="${statisticsSource === "batch"}">Temporary batch${batchDataset ? ` · ${batchDataset.games.length.toLocaleString()}` : ""}</button></div>` : ""}`;
+  return `<section class="batch-lab" aria-labelledby="batch-heading"><button type="button" class="stats-panel-heading batch-lab-toggle" data-batch-toggle aria-expanded="${batchExpanded}" aria-controls="batch-content"><span class="batch-lab-title" id="batch-heading">Simulation lab</span><span class="batch-lab-caption">${batchRunning && progress ? `${progress.attempted.toLocaleString()} / ${progress.requested.toLocaleString()} runs` : "Temporary — never saved"}<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m5 7 5 5 5-5"/></svg></span></button><div class="batch-lab-fold ${batchExpanded ? "is-expanded" : ""}"><div class="batch-lab-content" id="batch-content" ${batchExpanded ? "" : "inert"}><form id="batch-form"><div class="batch-config"><label>Runs<input id="batch-count" type="number" min="1" max="10000" step="1" required value="${batchConfig.count}" ${batchRunning ? "disabled" : ""}></label><div class="batch-player-range"><label>Min players<select id="batch-min-players" ${batchRunning ? "disabled" : ""}>${playerOptions(batchConfig.minPlayers)}</select></label><span aria-hidden="true">–</span><label>Max players<select id="batch-max-players" ${batchRunning ? "disabled" : ""}>${playerOptions(batchConfig.maxPlayers)}</select></label></div><button type="button" data-batch-run ${batchRunning ? "disabled" : ""}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">${computerIcon}</svg>Run simulations</button>${batchRunning ? `<button type="button" data-batch-cancel ${batchStopping ? "disabled" : ""}>${batchStopping ? "Stopping…" : "Stop batch"}</button>` : hasBatch ? '<button type="button" data-batch-clear>Clear dataset</button>' : ""}</div></form><p class="batch-explanation">Player count is picked randomly within your range. Every run shuffles starting hands, supplies and decks, then rolls its own fate.</p>${batchError ? `<p class="batch-error" role="alert">${escape(batchError)}</p>` : ""}${progress ? `<div class="batch-progress" role="progressbar" aria-label="Simulation batch progress" aria-valuemin="0" aria-valuemax="${progress.requested}" aria-valuenow="${progress.attempted}"><span style="width:${(progress.attempted / progress.requested) * 100}%"></span></div><div class="batch-progress-summary" role="status"><strong>${batchRunning ? (batchStopping ? "Stopping" : "Running") : batchDataset ? (batchDataset.cancelled ? "Stopped" : "Complete") : batchError ? "Paused" : "Complete"} — ${progress.attempted.toLocaleString()} / ${progress.requested.toLocaleString()}</strong><span>${progress.wins.toLocaleString()} reached Oregon — ${progress.losses.toLocaleString()} lost${progress.skipped ? ` — ${progress.skipped} action-limit runs excluded` : ""}</span></div>` : ""}</div></div></section>${hasBatch ? `<div class="statistics-source" role="group" aria-label="Statistics dataset"><button type="button" data-statistics-source="saved" aria-pressed="${statisticsSource === "saved"}">Saved journeys</button><button type="button" data-statistics-source="batch" aria-pressed="${statisticsSource === "batch"}">Temporary batch${batchDataset ? ` — ${batchDataset.games.length.toLocaleString()}` : ""}</button></div>` : ""}`;
 }
 function batchPlayerComparison() {
   if (!batchDataset?.games.length) return "";
@@ -2940,7 +2878,7 @@ function statisticsScreen() {
       ? `<section class="batch-waiting"><p>${batchRunning ? "The clankers are gathering evidence…" : "No completed runs in this dataset. Start a batch above."}</p></section>`
       : !total
         ? `<section class="stats-empty"><img src="${art.progressWagon}" alt=""><h3>${statisticsMode === "all" ? "A blank page, for now." : `No ${statisticsMode} journeys yet.`}</h3><p>${statisticsMode === "all" ? "Start a journey and its story will appear here—even before you reach the end." : "Choose another filter to explore the journeys saved here."}</p>${button("stats-back", "Back to the wagon →")}</section>`
-        : `${temporary ? batchPlayerComparison() : ""}${journeyFlow(data.games, statisticsFilter, flowMode)}<section class="stats-metrics" aria-label="Completed journey averages"><div><strong>${percent(data.survivalRate)}</strong><span>Traveller survival</span><small>${data.survivors} of ${data.travellers} travellers in completed games</small></div><div><strong>${data.averageDistance === null ? "—" : Math.round(data.averageDistance)}</strong><span>Average trail cards</span><small>Out of 50 · completed games</small></div><div><strong>${data.averageDays === null ? "—" : Math.round(data.averageDays)}</strong><span>Average days on the trail</span><small>Completed games</small></div></section><div class="stats-charts"><section class="stats-panel"><div class="stats-panel-heading"><h3>How far the wagon gets</h3></div><p class="stats-chart-note">Trail cards reached · ${temporary ? "temporary batch" : statisticsMode === "all" ? "all saved games" : `${statisticsMode} games`}</p><div class="stats-distance-chart" role="img" aria-label="${data.distances.map((bin) => `${bin.label}: ${bin.count} games`).join(", ")}">${data.distances.map((bin, index) => `<div><strong>${bin.count}</strong><div class="stats-bin-track"><span class="${index === 5 ? "stats-tone-won" : "stats-tone-travel"}" style="height:${(bin.count / maxDistance) * 100}%"></span></div><small>${bin.label}</small></div>`).join("")}</div></section><section class="stats-panel"><div class="stats-panel-heading"><h3>What the trail takes</h3></div><p class="stats-chart-note">Traveller deaths · ${temporary ? "temporary batch" : statisticsMode === "all" ? "all saved games" : `${statisticsMode} games`}</p>${
+        : `${temporary ? batchPlayerComparison() : ""}${journeyFlow(data.games, statisticsFilter, flowMode)}<section class="stats-metrics" aria-label="Completed journey averages"><div><strong>${percent(data.survivalRate)}</strong><span>Traveller survival</span><small>${data.survivors} of ${data.travellers} travellers in completed games</small></div><div><strong>${data.averageDistance === null ? "—" : Math.round(data.averageDistance)}</strong><span>Average trail cards</span><small>Out of 50 in completed games</small></div><div><strong>${data.averageDays === null ? "—" : Math.round(data.averageDays)}</strong><span>Average days on the trail</span><small>Completed games</small></div></section><div class="stats-charts"><section class="stats-panel"><div class="stats-panel-heading"><h3>How far the wagon gets</h3></div><p class="stats-chart-note">Trail cards reached — ${temporary ? "temporary batch" : statisticsMode === "all" ? "all saved games" : `${statisticsMode} games`}</p><div class="stats-distance-chart" role="img" aria-label="${data.distances.map((bin) => `${bin.label}: ${bin.count} games`).join(", ")}">${data.distances.map((bin, index) => `<div><strong>${bin.count}</strong><div class="stats-bin-track"><span class="${index === 5 ? "stats-tone-won" : "stats-tone-travel"}" style="height:${(bin.count / maxDistance) * 100}%"></span></div><small>${bin.label}</small></div>`).join("")}</div></section><section class="stats-panel"><div class="stats-panel-heading"><h3>What the trail takes</h3></div><p class="stats-chart-note">Traveller deaths — ${temporary ? "temporary batch" : statisticsMode === "all" ? "all saved games" : `${statisticsMode} games`}</p>${
             data.deaths.length
               ? `<div class="stats-death-chart">${data.deaths
                   .map(({ cause, count }) => {
@@ -2958,7 +2896,7 @@ function statisticsScreen() {
               : '<div class="stats-no-deaths"><img src="' +
                 art.progressWagon +
                 '" alt=""><p>No travellers lost so far.</p></div>'
-          }</section></div><section class="stats-history" id="stats-ledger" tabindex="-1"><div class="stats-panel-heading"><h3>${temporary ? "Batch runs" : "The journey ledger"}</h3>${visible.length ? `<span>${(ledgerStart + 1).toLocaleString()}–${(ledgerStart + displayed.length).toLocaleString()} of ${visible.length.toLocaleString()}</span>` : ""}</div><div class="stats-filters" role="group" aria-label="${temporary ? "Filter batch outcomes" : "Filter saved journeys"}">${(["all", ...labels] as const).map((outcome) => `<button data-stats-filter="${outcome}" aria-pressed="${statisticsFilter === outcome}">${outcome === "all" ? (temporary ? "All runs" : "All journeys") : outcomeNames[outcome]} <span>${outcome === "all" ? total : data.outcomes[outcome]}</span></button>`).join("")}</div><div class="stats-records">${displayed.length ? displayed.map((record) => `<article class="stats-record" data-ui-key="stats-record-${escape(record.id)}"><div class="stats-record-title"><h4>${temporary ? "Run" : "Journey"} ${record.number}</h4>${record.simulated ? '<span class="journey-mode-tag">Simulated</span>' : ""}<span class="stats-outcome-tag stats-tag-${record.outcome}">${outcomeNames[record.outcome]}</span></div><div class="stats-record-date">${date(record.startedAt)}${record.partial ? " · Partial turn history" : ""}</div><div class="stats-record-progress"><span style="width:${record.distance * 2}%" class="stats-tone-${record.outcome}"></span></div><div class="stats-record-totals"><span>${record.distance} / 50 cards</span><span>${record.days} day${record.days === 1 ? "" : "s"}</span><span>${record.survivors} / ${record.players.length} alive</span></div><div class="stats-record-party">${record.players.map((player, index) => `<span title="${escape(player.name)}${!player.alive ? ` — ${escape(player.deathCause ?? "Died on the trail")}` : ""}" aria-label="${escape(player.name)}${!player.alive ? ", deceased" : ""}">${player.alive ? portraitImage(player.portrait ?? index % 6) : `<img class="stats-grave" src="${art.tombstoneIcon}" alt="">`}</span>`).join("")}</div>${temporary ? "" : `<button class="stats-map-button" data-view-journey="${escape(record.id)}">View trail map →</button>`}</article>`).join("") : '<p class="stats-no-records">No journeys in this group yet.</p>'}</div>${pagination}</section>`
+          }</section></div><section class="stats-history" id="stats-ledger" tabindex="-1"><div class="stats-panel-heading"><h3>${temporary ? "Batch runs" : "The journey ledger"}</h3>${visible.length ? `<span>${(ledgerStart + 1).toLocaleString()}–${(ledgerStart + displayed.length).toLocaleString()} of ${visible.length.toLocaleString()}</span>` : ""}</div><div class="stats-filters" role="group" aria-label="${temporary ? "Filter batch outcomes" : "Filter saved journeys"}">${(["all", ...labels] as const).map((outcome) => `<button data-stats-filter="${outcome}" aria-pressed="${statisticsFilter === outcome}">${outcome === "all" ? (temporary ? "All runs" : "All journeys") : outcomeNames[outcome]} <span>${outcome === "all" ? total : data.outcomes[outcome]}</span></button>`).join("")}</div><div class="stats-records">${displayed.length ? displayed.map((record) => `<article class="stats-record" data-ui-key="stats-record-${escape(record.id)}"><div class="stats-record-title"><h4>${temporary ? "Run" : "Journey"} ${record.number}</h4>${record.simulated ? '<span class="journey-mode-tag">Simulated</span>' : ""}<span class="stats-outcome-tag stats-tag-${record.outcome}">${outcomeNames[record.outcome]}</span></div><div class="stats-record-date">${date(record.startedAt)}${record.partial ? " — Partial turn history" : ""}</div><div class="stats-record-progress"><span style="width:${record.distance * 2}%" class="stats-tone-${record.outcome}"></span></div><div class="stats-record-totals"><span>${record.distance} / 50 cards</span><span>${record.days} day${record.days === 1 ? "" : "s"}</span><span>${record.survivors} / ${record.players.length} alive</span></div><div class="stats-record-party">${record.players.map((player, index) => `<span title="${escape(player.name)}${!player.alive ? ` — ${escape(player.deathCause ?? "Died on the trail")}` : ""}" aria-label="${escape(player.name)}${!player.alive ? ", deceased" : ""}">${player.alive ? portraitImage(player.portrait ?? index % 6) : `<img class="stats-grave" src="${art.tombstoneIcon}" alt="">`}</span>`).join("")}</div>${temporary ? "" : `<button class="stats-map-button" data-view-journey="${escape(record.id)}">View trail map →</button>`}</article>`).join("") : '<p class="stats-no-records">No journeys in this group yet.</p>'}</div>${pagination}</section>`
   }</main>`;
 }
 app.addEventListener("click", (event) => {
@@ -3003,7 +2941,7 @@ app.addEventListener("click", async (event) => {
           (record) => record.id === opening,
         );
         if (!record) throw new Error("This journey is unavailable.");
-        const state = readSave(JSON.stringify(calendarReplay(record).state));
+        const state = readSave(JSON.stringify(replayGame(record)));
         if (!state)
           throw new Error("This journey’s saved state cannot be opened.");
         history!.select(opening);
@@ -3132,7 +3070,7 @@ app.addEventListener("click", async (event) => {
 });
 function trading() {
   const s = game.state;
-  return `<section class="shop passive-shop ${shopOpen ? "is-open" : ""}"><button data-action="shop" class="shop-toggle" aria-expanded="${shopOpen}" aria-controls="supply-shop-content"><img src="${art.shop}" alt=""><span><span class="eyebrow">Give 2 → Get 1</span><strong>Supply exchange</strong><small>Any two supplies for one you need · no turn used</small></span><span class="shop-chevron" aria-hidden="true">⌄</span></button><div id="supply-shop-content" class="shop-content" ${!shopOpen ? "hidden" : ""}><div class="exchange-columns"><section class="exchange-give"><div class="exchange-heading"><h3>Give 2</h3><span class="trade-give-count" role="status">0 / 2 selected</span></div><p>Pick any two supplies. One traveller can pay both, or two can share.</p><div class="exchange-bags">${game.living
+  return `<section class="shop passive-shop ${shopOpen ? "is-open" : ""}"><button data-action="shop" class="shop-toggle" aria-expanded="${shopOpen}" aria-controls="supply-shop-content"><img src="${art.shop}" alt=""><span><span class="eyebrow">Give 2 → Get 1</span><strong>Supply exchange</strong><small>Any two supplies for one you need. No turn used.</small></span><span class="shop-chevron" aria-hidden="true">⌄</span></button><div id="supply-shop-content" class="shop-content" ${!shopOpen ? "hidden" : ""}><div class="exchange-columns"><section class="exchange-give"><div class="exchange-heading"><h3>Give 2</h3><span class="trade-give-count" role="status">0 / 2 selected</span></div><p>Pick any two supplies. One traveller can pay both, or two can share.</p><div class="exchange-bags">${game.living
     .map((i) => {
       const p = s.players[i];
       return `<div class="exchange-bag" data-ui-key="exchange-bag-${i}"><div class="exchange-owner">${portrait(i)}<strong>${escape(p.name)}</strong></div><div class="trade-picks">${p.supplies.map((kind, index) => `<label data-ui-key="payment-${i}-${index}"><input type="checkbox" name="payment" value="${i}:${index}" aria-label="Give ${names[kind]} from ${escape(p.name)}, card ${index + 1}">${supplyEmblem(kind)}</label>`).join("") || '<small class="exchange-empty">No supplies to give.</small>'}</div></div>`;
@@ -3243,7 +3181,7 @@ function render() {
   initializeJourneyMapViewport();
   const s = game.state;
   const scene = journeyArtwork();
-  const markup = `<header><div><p class="eyebrow">A cooperative westward wander · 2–6 players</p><h1>Oregon Trail <i>Cards</i></h1></div><div class="header-actions">${navigationIcons()}${setup ? (s.started ? button("resume", "Back to journey") : "") : ""}</div></header>${confirming ? `<aside class="restart-confirm"><span>Leave this journey behind?</span><div class="restart-actions">${button("cancel", "Stay here")}${button("confirm-new", "Start afresh")}</div></aside>` : ""}${
+  const markup = `<header><div><p class="eyebrow">A cooperative westward wander — 2–6 players</p><h1>Oregon Trail <i>Cards</i></h1></div><div class="header-actions">${navigationIcons()}${setup ? (s.started ? button("resume", "Back to journey") : "") : ""}</div></header>${confirming ? `<aside class="restart-confirm"><span>Leave this journey behind?</span><div class="restart-actions">${button("cancel", "Stay here")}${button("confirm-new", "Start afresh")}</div></aside>` : ""}${
     setup
       ? !welcomeDismissed && !s.started && !history?.archive.games.length
         ? welcomeScreen()
@@ -3727,7 +3665,7 @@ function actionResult(
       text: remaining
         ? `${wagonKinds.has(h.kind) ? "The wagon" : game.state.players[h.owner].name} still needs more supplies to resolve ${titles[h.kind].toLowerCase()}.`
         : wagonKinds.has(h.kind)
-          ? "This wagon condition is no longer active."
+          ? "The wagon is ready to roll again."
           : `${game.state.players[h.owner].name} no longer has ${titles[h.kind].toLowerCase()}.`,
       visual: d.supply ? supplyEmblem(d.supply as Supply) : undefined,
     };

@@ -27,6 +27,7 @@ function journey(outcome, count, alive, causes = []) {
       status: outcome === "abandoned" ? "travel" : outcome,
       count,
       turn: 11,
+      day: 11,
       players: alive.map((alive, i) => ({
         name: `Player ${i}`,
         alive,

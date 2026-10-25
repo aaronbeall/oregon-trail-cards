@@ -56,6 +56,85 @@ export const titles: Record<Calamity, string> = {
   snake: "Snakebite",
   dysentery: "Dysentery",
 };
+export const deathEpitaphs: Record<string, readonly string[]> = {
+  dysentery: [
+    "Made a brave run for Oregon. And several for the bushes.",
+    "The spirit was willing. The stomach had other plans.",
+    "A fine companion, betrayed by a terrible supper.",
+    "Wanted a homestead. Settled for this small plot.",
+    "The trail was long. The final dash was short.",
+  ],
+  cholera: [
+    "Trusted the water. The water was not a friend.",
+    "A warm heart, a steady hand, one unwise drink.",
+    "May the springs beyond this trail run clear.",
+    "Never met a stranger. Should have questioned the well.",
+    "Left a full heart and an unfinished canteen.",
+  ],
+  measles: [
+    "One spot of trouble became far too many.",
+    "Brought sunshine to camp, even on the spotted days.",
+    "The second visit was one too many.",
+    "A bright soul beneath a very unlucky sky.",
+    "Missed a turn. Will be missed much longer.",
+  ],
+  typhoid: [
+    "Dreamed of green valleys through a fevered night.",
+    "The fever passed. So did our dear companion.",
+    "Kept hope warm when the nights grew cold.",
+    "Rest now, beyond the reach of fever.",
+    "The kettle still holds a place for you.",
+  ],
+  cold: [
+    "The prairie kept the coat. We keep the memory.",
+    "A warm soul in a winter without mercy.",
+    "Went west in search of land. Found eternal blanket weather.",
+    "May the next campfire never burn low.",
+    "Should have packed the other coat.",
+  ],
+  starvation: [
+    "Dreamed of Oregon and a second helping.",
+    "An empty plate, an undiminished heart.",
+    "Shared the last biscuit. We will not forget.",
+    "The pantry gave out before the courage did.",
+    "May the table beyond the trail always be full.",
+  ],
+  snake: [
+    "Mistook a warning rattle for trail music.",
+    "One small bite. One very large farewell.",
+    "Stepped boldly west. Then stepped in the wrong place.",
+    "May the grass beyond this trail hold no surprises.",
+    "The boots were sturdy. The snake was determined.",
+  ],
+  drowning: [
+    "The river kept a traveller. We kept a friend.",
+    "Reached for the far bank, and found a farther shore.",
+    "The current was stronger than the plan.",
+    "May the waters ahead be still.",
+    "Crossed too soon into quieter country.",
+  ],
+  other: [
+    "The trail ends here. The stories carry on.",
+    "A good companion on a very long road.",
+    "Oregon will have to wait.",
+    "Left us a little poorer, and the prairie a little richer.",
+    "Rest easy. The oxen can take it from here.",
+  ],
+};
+export function randomEpitaph(cause: string, random = Math.random) {
+  const key = /drown/i.test(cause)
+    ? "drowning"
+    : (Object.keys(deathEpitaphs).find((kind) =>
+        cause.toLowerCase().includes(kind),
+      ) ?? "other");
+  const options = deathEpitaphs[key];
+  return options[
+    Math.min(
+      options.length - 1,
+      Math.max(0, Math.floor(random() * options.length)),
+    )
+  ];
+}
 export type TrailReport = {
   card?: TrailCard;
   playedBy?: number;
@@ -125,7 +204,6 @@ export function journeyDate(days: number, start = JOURNEY_START_DATE) {
   return date.toISOString().slice(0, 10);
 }
 export function nextJourneyStartDate(previous: (string | undefined)[]) {
-  // Journey numbering supplies a stable baseline for older saves sharing April 1.
   let next = journeyDate(previous.length);
   for (const date of previous) {
     if (
@@ -161,14 +239,7 @@ export type Player = {
   deathDay?: number;
 };
 export type Phase =
-  | "turn"
-  | "river"
-  | "repair"
-  | "town"
-  | "fort"
-  | "stack"
-  | "discard"
-  | "legacy";
+  "turn" | "river" | "repair" | "town" | "fort" | "discard" | "legacy";
 export type SupplyLoss = {
   sequence: number;
   owner: number;
@@ -182,7 +253,7 @@ export type Journey = {
   players: Player[];
   current: number;
   turn: number;
-  day?: number;
+  day: number;
   deck: TrailCard[];
   calamities: Calamity[];
   discarded: Calamity[];
@@ -207,9 +278,9 @@ export type Journey = {
   trailReports?: Record<number, TrailReport>;
   lastSupplyLoss?: SupplyLoss;
 };
-/** Narrative calendar; older saved games retain their original turn-based dates. */
+/** Narrative calendar, independent of player turns. */
 export function journeyDay(state: Pick<Journey, "day" | "turn">) {
-  return state.day ?? state.turn;
+  return state.day;
 }
 /** Count actual player turns, including this turn, until this condition expires. */
 export function hazardDeadline(s: Journey, hazard: Hazard) {
@@ -243,7 +314,7 @@ export function label(c: TrailCard) {
     return c.locationName;
   return c.type === "river"
     ? c.deadly
-      ? "River · drowning risk"
+      ? "River — drowning risk"
       : "River crossing"
     : c.type === "calamity"
       ? "Calamity"
@@ -313,47 +384,8 @@ export class TrailGame {
     private onCalamity?: (kind: Calamity | undefined) => void,
   ) {
     this.state = saved ?? this.fresh(["Juniper", "Clementine", "Otis"]);
-    this.state.startDate ??= JOURNEY_START_DATE;
-    this.state.day ??= this.state.turn;
-    // Older saves stored five-card piles; restore their surviving cards in visit order.
-    if (this.state.stacks.length) {
-      const earlier = this.state.stacks.flatMap((pile, index) =>
-        pile.map((c, offset) => ({
-          ...c,
-          journeyStep: c.journeyStep ?? index * 5 + offset + 1,
-        })),
-      );
-      this.state.run = [...earlier, ...this.state.run].sort(
-        (a, b) =>
-          (a.journeyStep ?? this.state.count) -
-          (b.journeyStep ?? this.state.count),
-      );
-      this.state.stacks = [];
-    }
-    if (this.state.phase === "stack") this.finishCard();
-    if (this.state.resume === "stack") this.state.resume = "turn";
-    this.nameLocations([
-      ...this.state.deck,
-      ...this.state.run,
-      ...this.state.players.flatMap((p) => p.hand),
-      ...Object.values(this.state.trailReports ?? {}).flatMap((r) =>
-        r.card ? [r.card] : [],
-      ),
-    ]);
-    for (const report of Object.values(this.state.trailReports ?? {}))
-      if (report.card?.locationName && ["Town", "Fort"].includes(report.title))
-        report.title = report.card.locationName;
-    const assigned = new Set(this.state.players.map((p) => p.portrait));
-    const available = this.shuffle(
-      Array.from({ length: PORTRAIT_COUNT }, (_, i) => i).filter(
-        (i) => !assigned.has(i),
-      ),
-    );
-    for (const player of this.state.players) {
-      if (player.portrait === undefined) player.portrait = available.pop()!;
-      player.birthday ??= portraitBirthdays[player.portrait];
-    }
   }
+
   private nameLocations(cards: TrailCard[]) {
     const locations = cards.filter(
       (c) => c.type === "town" || c.type === "fort",
@@ -623,7 +655,7 @@ export class TrailGame {
     p.deathCause = cause;
     p.deathDay = journeyDay(s) - 1;
     p.deathDate = journeyDate(p.deathDay, s.startDate);
-    p.epitaph = `Here rests ${p.name}. ${cause}. The prairie remembers.`;
+    p.epitaph = randomEpitaph(cause, this.random);
     s.deck.push(...p.hand);
     p.hand = [];
     s.deaths.push(i);
@@ -671,7 +703,6 @@ export class TrailGame {
     s.legacyCount = 0;
     if (!s.deaths.length) {
       s.phase = s.resume;
-      if (s.phase === "stack") this.finishCard();
     }
     return true;
   }
@@ -1029,12 +1060,12 @@ export function readSave(raw: string | null): Journey | undefined {
         "repair",
         "town",
         "fort",
-        "stack",
         "discard",
         "legacy",
       ].includes(s.phase) ||
       !Array.isArray(s.hazards) ||
       !Array.isArray(s.stacks) ||
+      s.stacks.length !== 0 ||
       !Array.isArray(s.run) ||
       !Array.isArray(s.deck) ||
       !Array.isArray(s.calamities) ||
@@ -1045,8 +1076,9 @@ export function readSave(raw: string | null): Journey | undefined {
       s.count > 50 ||
       !Number.isInteger(s.turn) ||
       s.turn < 1 ||
-      (s.day !== undefined &&
-        (!Number.isInteger(s.day) || s.day < 1 || s.day > s.turn)) ||
+      !Number.isInteger(s.day) ||
+      s.day < 1 ||
+      s.day > s.turn ||
       typeof s.started !== "boolean" ||
       typeof s.note !== "string"
     )

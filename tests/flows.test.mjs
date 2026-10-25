@@ -63,7 +63,7 @@ test("loss cause uses the recorded journey-ending event and normalizes old illne
       note: "",
       players: [person(false, "Cholera")],
     }),
-    "No survivors · cause unrecorded",
+    "No survivors — cause unrecorded",
   );
   assert.equal(journeyLossCause({ status: "won", players: [] }), undefined);
 });

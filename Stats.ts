@@ -15,7 +15,7 @@ export type JourneySummary = {
   partial: boolean;
   lossReason?: string;
 };
-/** Canonical labels keep legacy “second card” wording out of analysis. */
+/** Group death causes under consistent analysis labels. */
 export function canonicalCause(raw?: string): string {
   if (!raw?.trim()) return "Cause unrecorded";
   if (/drown/i.test(raw)) return "Drowning";
@@ -46,8 +46,8 @@ export function journeyLossCause(state: Journey): string | undefined {
   const death = (state.note ?? "").match(/died:\s*(.*?)\.?$/i);
   if (death) return canonicalCause(death[1].replace(/\.$/, ""));
   return state.players.some((p) => p.alive)
-    ? "Wagon stopped · cause unrecorded"
-    : "No survivors · cause unrecorded";
+    ? "Wagon stopped — cause unrecorded"
+    : "No survivors — cause unrecorded";
 }
 export function gameStatistics(
   records: { record: RecordedGame; state: Journey }[],
@@ -67,7 +67,7 @@ export function gameStatistics(
       startedAt: record.startedAt,
       outcome: record.outcome === "abandoned" ? "abandoned" : state.status,
       distance: Math.min(50, Math.max(0, state.count)),
-      days: Math.max(0, (state.day ?? state.turn) - 1),
+      days: Math.max(0, state.day - 1),
       players: state.players,
       survivors: state.players.filter((player) => player.alive).length,
       partial: !record.completeFromStart,

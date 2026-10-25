@@ -15,7 +15,7 @@ export type HistoryEvent = {
   sequence: number;
   at: string;
   turn: number;
-  day?: number;
+  day: number;
   player: number;
   action: GameAction;
   note: string;
@@ -117,50 +117,6 @@ export function replayGame(
   return state;
 }
 
-/** Read-only calendar projection for archives recorded before days were explicit. */
-export function calendarReplay(record: RecordedGame) {
-  if (
-    record.initial.day !== undefined &&
-    record.events.every((event) => event.day !== undefined)
-  ) {
-    return {
-      state: replayGame(record),
-      eventDays: record.events.map((event) => event.day!),
-    };
-  }
-  let state = structuredClone(record.initial);
-  let day = state.day ?? state.turn;
-  const eventDays: number[] = [];
-  const deaths = new Map<number, number>();
-  for (const event of record.events) {
-    const actionDay = event.day ?? state.day ?? day;
-    eventDays.push(actionDay);
-    const next = replayGame({ ...record, initial: state, events: [event] });
-    next.players.forEach((person, index) => {
-      if (state.players[index]?.alive && !person.alive)
-        deaths.set(index, actionDay - 1);
-    });
-    const atRiver =
-      next.phase === "river" ||
-      (next.phase === "legacy" && next.resume === "river");
-    day =
-      next.day ??
-      actionDay +
-        (next.turn > state.turn && next.status === "travel" && !atRiver
-          ? next.turn - state.turn
-          : 0);
-    state = next;
-  }
-  state.day = day;
-  for (const [index, elapsed] of deaths) {
-    state.players[index].deathDay = elapsed;
-    const date = new Date(`${state.startDate ?? "1847-04-01"}T00:00:00Z`);
-    date.setUTCDate(date.getUTCDate() + elapsed);
-    state.players[index].deathDate = date.toISOString().slice(0, 10);
-  }
-  return { state, eventDays };
-}
-
 export class GameHistory {
   archive: GameArchive;
   private last?: Journey;
@@ -238,8 +194,7 @@ export class GameHistory {
         sequence: recorded.events.length + 1,
         at,
         turn: this.last.turn,
-        day:
-          this.last.day ?? calendarReplay(recorded).state.day ?? this.last.turn,
+        day: this.last.day,
         player: this.last.current,
         action: structuredClone(action),
         note: state.note,

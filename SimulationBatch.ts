@@ -92,7 +92,7 @@ export async function runSimulationBatch(
         startedAt: dataset.createdAt,
         outcome: s.status,
         distance: s.count,
-        days: Math.max(0, (s.day ?? s.turn) - 1),
+        days: Math.max(0, s.day - 1),
         survivors: s.players.filter((p) => p.alive).length,
         partial: false,
         lossReason: journeyLossCause(s),

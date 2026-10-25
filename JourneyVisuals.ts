@@ -9,8 +9,9 @@ import {
   type Journey,
   type TrailReport,
   type TrailCard,
+  type Calamity,
 } from "./TrailCard";
-import { replayGame, calendarReplay, type RecordedGame } from "./History";
+import { replayGame, type RecordedGame } from "./History";
 import type { JourneySummary, Outcome } from "./Stats";
 import { supplyEmblem } from "./Supplies";
 import { renderJourneyFlow, type FlowMode } from "./Flows";
@@ -46,8 +47,13 @@ export function journeyFlow(
   return renderJourneyFlow(games, selected, mode);
 }
 export type MapAction = {
+  playerStatesAfter?: string[][];
+  livingAfter?: number[];
+  calamity?: Calamity;
+  wagonState?: "travel" | "broken" | "river" | "settlement";
+  wagonAfter?: "travel" | "broken" | "river" | "settlement";
   turn: number;
-  day?: number;
+  day: number;
   player: number;
   action: string;
   type?: string;
@@ -84,6 +90,26 @@ type RecordedMapAction = {
   report?: TrailReport;
   artKind?: string;
 };
+function playbackWagonState(
+  state: Journey,
+): NonNullable<MapAction["wagonState"]> {
+  const phase = state.phase === "legacy" ? state.resume : state.phase;
+  if (phase === "river") return "river";
+  if (
+    phase === "repair" ||
+    state.hazards.some((h) =>
+      ["axle", "tongue", "wheel", "oxen"].includes(h.kind),
+    )
+  )
+    return "broken";
+  if (
+    phase === "town" ||
+    phase === "fort" ||
+    ["town", "fort"].includes(state.run.at(-1)?.type ?? "")
+  )
+    return "settlement";
+  return "travel";
+}
 const sharedConditions = new Set([
   "axle",
   "tongue",
@@ -92,21 +118,47 @@ const sharedConditions = new Set([
   "water",
   "grass",
 ]);
+export function playbackPlayerStates(state: Journey) {
+  return state.players.map((player, index) => {
+    if (!player.alive)
+      return [
+        `Died of ${player.deathCause ?? "unknown causes"}${player.deathDate ? ` on ${calendarDate(player.deathDate)}` : ""}.`,
+        player.epitaph,
+      ].filter(Boolean);
+    const conditions = state.hazards.filter(
+      (h) => h.owner === index && !sharedConditions.has(h.kind),
+    );
+    return [
+      ...(conditions.length
+        ? conditions.map((h) => {
+            const needs = Object.entries(h.needs)
+              .filter(([, n]) => n! > 0)
+              .map(
+                ([kind, n]) =>
+                  `${n} ${supplyNames[kind as Supply].toLowerCase()}`,
+              );
+            return `${titles[h.kind]}.${h.skip > 0 ? ` Resting for ${h.skip} more turn${h.skip === 1 ? "" : "s"}.` : ""}${needs.length ? ` Needs ${needs.join(" and ")}.` : ""}${h.rounds !== null ? ` ${h.rounds} round${h.rounds === 1 ? "" : "s"} remaining.` : ""}`;
+          })
+        : ["In good health."]),
+      `${player.hand.length} trail card${player.hand.length === 1 ? "" : "s"} and ${player.supplies.length} supplies.`,
+    ];
+  });
+}
+function rosterTooltip(
+  name: string,
+  portrait: string,
+  states: string[],
+  when: string,
+) {
+  return `<div class="map-roster-tooltip"><div class="map-event-heading">${portrait}<strong>${esc(name)}</strong></div><small>${esc(when)}</small>${states.map((text) => `<p>${esc(text)}</p>`).join("")}</div>`;
+}
 function namedMapCard(state: Journey, card?: TrailCard, step?: number) {
   const recorded =
     step === undefined ? undefined : state.trailReports?.[step]?.card;
   card ??= recorded;
   if (!card || card.locationName || !["town", "fort"].includes(card.type))
     return card;
-  const known = [
-    recorded,
-    ...Object.values(state.trailReports ?? {}).map((r) => r.card),
-    ...state.run,
-    ...state.stacks.flat(),
-    ...state.deck,
-    ...state.players.flatMap((p) => p.hand),
-  ].find((c) => c?.id === card!.id && c.locationName);
-  return known ? { ...card, locationName: known.locationName } : card;
+  return card;
 }
 function specificMapTitle(
   state: Journey,
@@ -115,6 +167,8 @@ function specificMapTitle(
   step?: number,
 ) {
   const named = namedMapCard(state, card ?? report?.card, step);
+  if (named?.type === "river")
+    return named.deadly ? "Raging river crossing" : "Flowing river crossing";
   if (named?.locationName && ["town", "fort"].includes(named.type))
     return named.locationName;
   const generic = ["Town", "Fort", "Calamity", "Trail card played"];
@@ -135,16 +189,13 @@ export function journeyMapEvents(
   >();
   const actions = new Map<number, MapAction[]>();
   const chronological: RecordedMapAction[] = [];
-  const calendar = record?.initial ? calendarReplay(record) : undefined;
-  let calendarIndex = 0;
   const deaths = new Map<
     number,
     { step: number; turn: number; day: number; player: number }
   >();
   let previous = record?.initial;
   for (const event of record?.events ?? []) {
-    const eventDay =
-      calendar?.eventDays[calendarIndex++] ?? event.day ?? event.turn;
+    const eventDay = event.day;
     const count = event.changes.find(
       (c) => c.path.length === 1 && c.path[0] === "count" && "value" in c,
     );
@@ -232,6 +283,7 @@ export function journeyMapEvents(
                             : type === "trade"
                               ? "Exchanged supplies"
                               : "Willed supplies";
+      let calamity: Calamity | undefined;
       if (type === "play") {
         const card = namedMapCard(
           state,
@@ -239,6 +291,20 @@ export function journeyMapEvents(
           next.count,
         );
         if (card) action = `Played ${label(card)}`;
+        if (card?.type === "calamity") {
+          const pool = previous.calamities.length
+            ? previous.calamities
+            : previous.discarded;
+          calamity =
+            next.trailReports?.[step]?.calamity ??
+            (previous.calamities.length
+              ? pool[0]
+              : pool.find(
+                  (kind) =>
+                    pool.filter((k) => k === kind).length >
+                    next.calamities.filter((k) => k === kind).length,
+                ));
+        }
       }
       const beforeResults = previous.trailReports?.[step]?.results ?? [];
       let text = (next.trailReports?.[step]?.results ?? []).slice(
@@ -316,6 +382,13 @@ export function journeyMapEvents(
       }
       const list = actions.get(step) ?? [];
       list.push({
+        playerStatesAfter: playbackPlayerStates(next),
+        livingAfter: next.players.flatMap((p, index) =>
+          p.alive ? [index] : [],
+        ),
+        calamity,
+        wagonState: playbackWagonState(type === "play" ? next : previous),
+        wagonAfter: playbackWagonState(next),
         turn: death?.turn ?? event.turn,
         day: death?.day ?? eventDay,
         player: death?.player ?? event.player,
@@ -331,14 +404,16 @@ export function journeyMapEvents(
                 previous.players[event.player]?.hand[Number(args.play)],
                 next.count,
               )
-            : type === "draw"
-              ? next.players[event.player].hand.find(
-                  (c) =>
-                    !previous!.players[event.player].hand.some(
-                      (old) => old.id === c.id,
-                    ),
-                )
-              : undefined,
+            : type === "roll"
+              ? previous.run.at(-1)
+              : type === "draw"
+                ? next.players[event.player].hand.find(
+                    (c) =>
+                      !previous!.players[event.player].hand.some(
+                        (old) => old.id === c.id,
+                      ),
+                  )
+                : undefined,
         deaths: next.players.flatMap((p, index) =>
           previous!.players[index].alive && !p.alive ? [index] : [],
         ),
@@ -494,7 +569,7 @@ function chronologicalMapEvents(
       card: action.card,
       report: report ? { ...report, deaths } : undefined,
       turn: first.action.turn,
-      day: first.action.day ?? first.action.turn,
+      day: first.action.day,
       player: first.action.player,
       actions,
     });
@@ -674,10 +749,17 @@ type MapArt = {
   outcomeFailure: string;
 };
 export type MapAssets = {
+  rivers?: { moderate: string; raging: string };
   art: MapArt;
   calamities: Record<string, string>;
   portraits: string[];
 };
+function mapRiverArt(card: TrailCard | undefined, assets: MapAssets) {
+  return (
+    (card?.deadly ? assets.rivers?.raging : assets.rivers?.moderate) ??
+    assets.art.river
+  );
+}
 function mapSupplyChange(kind: Supply, delta: number) {
   const change = delta > 0 ? "gain" : "loss";
   return `<span class="timeline-supply-change ${change}">${supplyEmblem(kind, Math.abs(delta), true, change)}</span>`;
@@ -724,7 +806,7 @@ function mapEventVisual(
     const kind = action.card?.type ?? "trail";
     const image =
       kind === "river"
-        ? assets.art.river
+        ? mapRiverArt(action.card, assets)
         : kind === "calamity"
           ? assets.art.calamity
           : kind === "town"
@@ -779,6 +861,40 @@ export function mapActionTone(
   if (action.supplies.some((s) => s.delta > 0)) return "positive";
   return "neutral";
 }
+/** Map history describes what happened, without prompts or rules for the next move. */
+export function mapResultText(text: string) {
+  return text
+    .replace(/ and must miss one turn/gi, "")
+    .replace(/Wagon stopped;[^.]*\./gi, "The wagon stopped.")
+    .replace(/Clean water cures this\./gi, "The water is unsafe.")
+    .replace(/Only a town removes this\./gi, "The oxen lack grazing.")
+    .replace(/a lucky repair\./gi, "the repair succeeded.")
+    .replace(
+      /The town has pasture to spare\. The oxen fill their bellies, and one Inadequate Grass condition is removed from the wagon\./gi,
+      "The oxen found fresh grazing. Inadequate grass cleared.",
+    )
+    .replace(
+      /This wagon condition is no longer active\./gi,
+      "The wagon is ready to roll again.",
+    )
+    .replace(/The wagon politely carries on\./gi, "The wagon continues.")
+    .replace(/A thief struck while (.+?) was minding the wagon\.\s*/gi, "")
+    .split(/(?<=[.!?])\s+/)
+    .filter(
+      (sentence) =>
+        !/^(?:Try |Supply |Give |Choose |Pick |Click |Press |Continue\b|Pass (?:the|to) |Put the kettle|The next traveller|Their remaining supplies|A second (?:bad-water|grass) card|It can be played|Your turn is over|(?:Two medicine cards|Medicine) cure|Bullets stay|The wheels have reconsidered|Even the oxen)/i.test(
+          sentence,
+        ),
+    )
+    .filter(
+      (sentence) =>
+        !/\b(?:a second .+ card kills|must miss .+ turns?, then recovers)\b/i.test(
+          sentence,
+        ),
+    )
+    .join(" ")
+    .trim();
+}
 /** Keep each graphic beside the words it illustrates; supply deltas appear once. */
 export function mapActionPresentation(
   a: MapAction,
@@ -815,17 +931,28 @@ export function mapActionPresentation(
   };
   let action: string;
   if (a.type === "play" || a.type === "draw") {
-    action = `${a.type === "play" ? "played" : "drew"} <span class="map-inline-card"><span class="map-event-visual">${mapEventVisual({ ...a, rolls: [] }, assets)}</span>${esc(a.card ? label(a.card) : "a trail card")}</span>`;
+    action = `${a.type === "play" ? "played" : "drew"}${a.card?.type === "calamity" ? " a" : ""} <span class="map-inline-card"><span class="map-event-visual">${mapEventVisual({ ...a, rolls: [] }, assets)}</span>${esc(a.card ? (a.card.type === "calamity" ? "calamity" : label(a.card)) : "a trail card")}</span>`;
     if (a.rolls.length)
-      action += ` · rolled <span class="map-event-visual map-inline-dice">${mapEventVisual(a, assets)}</span>`;
+      action += `, rolled <span class="map-event-visual map-inline-dice">${mapEventVisual(a, assets)}</span>`;
+    if (a.type === "play" && a.card?.type === "river")
+      action += ` — ${a.card.deadly ? "raging river; risk of drowning" : "flowing river; risk of supply loss"}`;
+    if (a.calamity)
+      action += ` — <span class="map-action-calamity">${assets.calamities[a.calamity] ? `<img src="${assets.calamities[a.calamity]}" alt="">` : ""}${esc(titles[a.calamity])}</span>`;
   } else {
-    action = decorate(a.action.charAt(0).toLowerCase() + a.action.slice(1));
+    action =
+      a.type === "roll" && a.card?.type === "river"
+        ? `attempted the ${a.card.deadly ? "raging" : "flowing"} river crossing`
+        : decorate(a.action.charAt(0).toLowerCase() + a.action.slice(1));
     if (a.rolls.length)
-      action += ` · rolled <span class="map-event-visual map-inline-dice">${mapEventVisual(a, assets)}</span>`;
+      action += `, rolled <span class="map-event-visual map-inline-dice">${mapEventVisual(a, assets)}</span>`;
     else if (!a.supplies.length)
       action += ` <span class="map-event-visual map-inline-symbol">${mapEventVisual(a, assets)}</span>`;
   }
-  const results = a.text
+  const resultText =
+    a.type === "roll" && (a.rolls.at(-1) ?? 1) % 2 === 0
+      ? ["The wagon reached the far bank."]
+      : a.text;
+  const results = resultText
     .map((text) => {
       const who = state.players[a.player]?.name;
       if (
@@ -843,7 +970,21 @@ export function mapActionPresentation(
           }
         }
       }
-      return text;
+      const concise = mapResultText(text);
+      if (a.type === "repair" || a.type === "roll")
+        return concise
+          .split(/(?<=[.!?])\s+/)
+          .filter((sentence) =>
+            a.type === "repair"
+              ? !/^(?:[^.!?]*:\s*)?(?:the )?repair (?:failed|succeeded)\.?$|^The wagon can carry on\.$/i.test(
+                  sentence,
+                )
+              : !/^(?:The )?crossing (?:fails|failed|succeeds|succeeded)\.?$|^The wagon reached the far bank\.$/i.test(
+                  sentence,
+                ),
+          )
+          .join(" ");
+      return concise;
     })
     .filter(Boolean)
     .filter(
@@ -859,8 +1000,12 @@ export function mapActionPresentation(
   // Unnamed changes (such as both sides of an exchange) still belong to the action sentence.
   a.supplies.forEach((change, index) => {
     if (!used.has(index))
-      action += ` · ${change.delta > 0 ? "gained" : a.type === "trade" ? "traded" : a.type === "cure" ? "used" : "lost"} ${supply(index, true)}`;
+      action += `, ${change.delta > 0 ? "gained" : a.type === "trade" ? "traded" : a.type === "cure" ? "used" : "lost"} ${supply(index, true)}`;
   });
+  if (a.type === "roll" && a.rolls.length)
+    action += a.rolls.at(-1)! % 2 === 0 ? " — crossed" : " — crossing failed";
+  if (a.type === "repair" && a.rolls.length)
+    action += a.rolls.at(-1)! >= 4 ? " — repaired" : " — repair failed";
   return { action, results };
 }
 function mapActionEntry(a: MapAction, state: Journey, assets: MapAssets) {
@@ -889,9 +1034,10 @@ export function groupSupplyActions(actions: MapAction[]): MapAction[] {
       eligible(previous) &&
       eligible(action) &&
       previous.type === action.type &&
+      previous.wagonState === action.wagonState &&
       previous.player === action.player &&
       previous.turn === action.turn &&
-      (previous.day ?? previous.turn) === (action.day ?? action.turn) &&
+      previous.day === action.day &&
       previous.context === action.context &&
       target(previous) === target(action)
     ) {
@@ -910,6 +1056,9 @@ export function groupSupplyActions(actions: MapAction[]): MapAction[] {
           : names[0];
       grouped[grouped.length - 1] = {
         ...previous,
+        playerStatesAfter: action.playerStatesAfter,
+        livingAfter: action.livingAfter,
+        wagonAfter: action.wagonAfter,
         supplies,
         action: `${action.type === "take" ? "Packed" : "Gave"} ${list}${target(action)}`,
         // The final contribution contains the current treatment result.
@@ -935,12 +1084,11 @@ function turnHistory(actions: MapAction[], state: Journey, assets: MapAssets) {
     const matching = action.inheritance?.linkedToDeath
       ? groups.find((g) => g.turn === action.turn && g.player === action.player)
       : groups.at(-1);
-    if (matching?.day === (action.day ?? action.turn))
-      matching.actions.push(action);
+    if (matching?.day === action.day) matching.actions.push(action);
     else
       groups.push({
         turn: action.turn,
-        day: action.day ?? action.turn,
+        day: action.day ?? journeyDay(state),
         player: action.player,
         actions: [action],
       });
@@ -987,7 +1135,7 @@ function mapOutcome(
   return `<g class="map-outcome map-outcome-${state.status}" transform="translate(${point.x} ${point.y})"><image href="${image}" x="-26" y="-26" width="52" height="52" preserveAspectRatio="xMidYMid meet"/></g>`;
 }
 export type PlaybackToast = { html: string; label: string; tone: string };
-function playbackToasts(
+export function playbackToasts(
   action: MapAction | undefined,
   state: Journey,
   assets: MapAssets,
@@ -1017,27 +1165,38 @@ function playbackToasts(
           : [],
       );
   }
-  let text = mapActionPresentation(action, state, assets).action;
-  if (action.type === "roll")
-    text +=
-      action.rolls.at(-1)! % 2 === 0 ? " — crossed" : " — crossing failed";
-  if (action.type === "repair")
-    text += action.rolls.at(-1)! >= 4 ? " — repaired" : " — repair failed";
+  const presentation = mapActionPresentation(action, state, assets);
+  let text = presentation.action;
+  if (presentation.results.length)
+    text += `. ${presentation.results.join(" ")}`;
   for (const change of action.supplies) {
     if (!text.includes(`data-supply-kind="${change.kind}"`))
       text += ` ${mapSupplyChange(change.kind, change.delta)}`;
   }
-  for (const index of action.deaths ?? [])
-    text += ` · <img class="playback-toast-grave" src="${assets.art.tombstoneIcon}" alt="">${esc(state.players[index].name)} died of ${esc(state.players[index].deathCause ?? "unknown causes")}`;
+  for (const index of action.deaths ?? []) {
+    const name = esc(state.players[index].name);
+    if (
+      presentation.results.some(
+        (result) => result.includes(name) && /died|drown/i.test(result),
+      )
+    )
+      continue;
+    text += `. <img class="playback-toast-grave" src="${assets.art.tombstoneIcon}" alt="">${name} died of ${esc(state.players[index].deathCause ?? "unknown causes")}`;
+  }
   return [
     {
       html: `${assets.portraits[action.player] ?? ""}<span><strong>${esc(who)}</strong> ${text}</span>`,
-      label: `${who} ${action.action}. ${action.text.join(" ")}`,
+      label: `${who} ${action.action}. ${action.text.map(mapResultText).filter(Boolean).join(" ")}`,
       tone: mapActionTone(action),
     },
   ];
 }
 export type MapPlaybackCue = {
+  playerStates?: string[][];
+  summary?: string;
+  turn?: number;
+  player?: number;
+  living?: number[];
   step: number;
   progress: number;
   day: number;
@@ -1047,25 +1206,35 @@ export type MapPlaybackCue = {
   title?: string;
   image?: string;
   marker?: string;
+  markerFacesWest?: boolean;
   toasts?: PlaybackToast[];
 };
+export function playbackPartySummary(
+  state: Pick<Journey, "players" | "status">,
+) {
+  const alive = state.players.filter((p) => p.alive).length;
+  if (!alive) return "Everyone died";
+  const travellers = `${alive} traveller${alive === 1 ? "" : "s"}`;
+  return state.status === "won"
+    ? `${travellers} reached Oregon`
+    : state.status === "lost"
+      ? `${travellers} survived. The wagon could go no farther.`
+      : `${travellers} still on the trail`;
+}
 export function playbackHold(event: MapEvent, action?: MapAction) {
-  if (event.kind === "finish" || action?.deaths?.length || action?.inheritance)
-    return 2800;
+  if (action?.deaths?.length) return 4200;
+  if (event.kind === "finish") return 2800;
   if (event.kind === "start" && !action) return 800;
   if (action?.type === "end" || action?.type === "leave") return 0;
+  if (action?.wagonState !== undefined) {
+    return { travel: 0, broken: 2300, river: 850, settlement: 1800 }[
+      action.wagonState
+    ];
+  }
   if (action?.type === "roll" || event.card?.type === "river") return 850;
   const kind = mapStopKind(event);
   if (kind === "stopped" || action?.type === "repair") return 2300;
   if (kind === "settlement") return 1800;
-  // These recorded days really are spent at the same location.
-  if (
-    action &&
-    ["draw", "skip", "cure", "town", "trade", "take"].includes(
-      action.type ?? "",
-    )
-  )
-    return 1300;
   return 0;
 }
 function playbackContent(
@@ -1073,7 +1242,10 @@ function playbackContent(
   image: string,
   state: Journey,
   assets: MapAssets,
+  action?: MapAction,
 ) {
+  if (action?.deaths?.length)
+    return `<article class="map-playback-event playback-death-event">${action.deaths.map((index) => `<h4>${esc(state.players[index].name)} died of ${esc(state.players[index].deathCause ?? "unknown causes")}</h4>${mapGravestone(index, state, assets)}`).join("")}</article>`;
   const kind = event.report?.calamity ?? event.artKind ?? event.kind;
   const personal = Object.hasOwn(titles, kind) && !sharedConditions.has(kind);
   const owner = event.report?.owner ?? event.player;
@@ -1085,7 +1257,7 @@ function playbackContent(
   return `<article class="map-playback-event"><div class="playback-event-illustration"><img class="playback-event-art" src="${image}" alt="">${portrait}</div><h4>${esc(event.title)}</h4></article>`;
 }
 /** Recorded actions share a location; days spent there lengthen its pause. */
-export const PLAYBACK_TOAST_GAP = 1800;
+export const PLAYBACK_TOAST_GAP = 3600;
 export function mapPlaybackTimeline(cues: MapPlaybackCue[]) {
   let time = 0,
     progress = 0;
@@ -1098,14 +1270,14 @@ export function mapPlaybackTimeline(cues: MapPlaybackCue[]) {
   let nextToast = 0;
   const timeline = cues.map((cue, index) => {
     const from = progress;
-    const move = Math.max(0, cue.progress - from) * 100000;
+    const move = Math.max(0, cue.progress - from) * 200000;
     const start = time,
       arrive = start + move;
     const daysHere = Math.max(0, (cues[index + 1]?.day ?? cue.day) - cue.day);
     time =
       arrive +
-      cue.hold * 1.35 +
-      (cue.hold > 0 ? Math.min(3500, daysHere * 240) : 0);
+      cue.hold * 2.7 +
+      (cue.hold > 0 ? Math.min(7000, daysHere * 480) : 0);
     progress = cue.progress;
     const ordinal = dayOrdinals.get(cue.day) ?? 0;
     dayOrdinals.set(cue.day, ordinal + 1);
@@ -1129,6 +1301,8 @@ export function mapPlaybackTimeline(cues: MapPlaybackCue[]) {
       nextToast = at + PLAYBACK_TOAST_GAP;
       return at;
     });
+    // Each action gets its own window; its notifications cannot spill into the next turn.
+    if (toastTimes.length) time = Math.max(time, nextToast);
     return {
       ...cue,
       toastTimes,
@@ -1142,8 +1316,30 @@ export function mapPlaybackTimeline(cues: MapPlaybackCue[]) {
     };
   });
   const last = timeline.at(-1);
-  if (last && nextToast > 0) last.end = Math.max(last.end, nextToast + 1500);
+  if (last && nextToast > 0) last.end = Math.max(last.end, nextToast + 3000);
   return timeline;
+}
+
+/** Presentation time need not stop a travelling wagon. Only wagon holds anchor it. */
+export function mapPlaybackProgress(
+  timeline: ReturnType<typeof mapPlaybackTimeline>,
+  elapsed: number,
+) {
+  const anchors = [{ at: 0, progress: 0 }];
+  for (const cue of timeline) {
+    if (cue.progress > anchors.at(-1)!.progress || cue.hold > 0)
+      anchors.push({ at: cue.arrive, progress: cue.progress });
+    if (cue.hold > 0) anchors.push({ at: cue.end, progress: cue.progress });
+  }
+  const next = anchors.findIndex((a) => a.at > elapsed);
+  if (next < 0) return anchors.at(-1)!.progress;
+  const from = anchors[Math.max(0, next - 1)],
+    to = anchors[next];
+  const fraction = Math.max(
+    0,
+    Math.min(1, (elapsed - from.at) / (to.at - from.at || 1)),
+  );
+  return from.progress + (to.progress - from.progress) * fraction;
 }
 
 /** Fictional clock, monotonic across every recorded day and action. */
@@ -1261,29 +1457,13 @@ function mapLegend(assets: MapAssets) {
         `<span><svg class="map-key-stop map-event-dot map-stop-${kind}" viewBox="-10 -10 20 20" aria-hidden="true">${mapStopSymbol(kind)}</svg>${text}</span>`,
     )
     .join("");
-  return `<details class="map-legend" open><summary>Map legend <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></summary><div class="map-legend-items"><span><i class="map-key-complete"></i>Travelled</span><span><i class="map-key-remaining"></i>Ahead</span>${stops}<span><img class="map-legend-picture" src="${assets.art.trail}" alt="">Featured event</span><span><img src="${assets.art.outcomeSuccess}" alt="">Reached Oregon</span><span><img src="${assets.art.outcomeFailure}" alt="">Journey lost</span></div><p>Point to any marker for its story.<br>Drag to pan · scroll or pinch to zoom</p></details>`;
+  return `<details class="map-legend" open><summary>Map legend <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></summary><div class="map-legend-items"><span><i class="map-key-complete"></i>Travelled</span><span><i class="map-key-remaining"></i>Ahead</span>${stops}<span><img class="map-legend-picture" src="${assets.art.trail}" alt="">Featured event</span></div><p>Point to any marker for its story.<br>Drag to pan. Scroll or pinch to zoom.</p></details>`;
 }
 export function journeyMap(
   state: Journey,
   assets: MapAssets,
   record?: RecordedGame,
 ) {
-  if (record?.initial) {
-    const projected = calendarReplay(record).state;
-    state = {
-      ...state,
-      day: projected.day,
-      players: state.players.map((person, index) =>
-        person.alive
-          ? person
-          : {
-              ...person,
-              deathDay: projected.players[index]?.deathDay,
-              deathDate: projected.players[index]?.deathDate,
-            },
-      ),
-    };
-  }
   const events = journeyMapEvents(state, record);
   const end: MapEvent = {
     step: events.length,
@@ -1303,6 +1483,10 @@ export function journeyMap(
   const connectors: string[] = [];
   const trailAnchors: string[] = [];
   const playback: MapPlaybackCue[] = [];
+  let living = (record?.initial ?? state).players.flatMap((p, index) =>
+    p.alive ? [index] : [],
+  );
+  let playerStates = playbackPlayerStates(record?.initial ?? state);
   const markers = entries
     .map((e, i) => {
       const progress = e.progress ?? eventRouteProgress(e.step, state.count);
@@ -1345,7 +1529,7 @@ export function journeyMap(
                 : assets.art.progressWagon
             : (assets.calamities[e.artKind ?? e.kind] ??
               (e.kind === "river"
-                ? assets.art.river
+                ? mapRiverArt(e.card, assets)
                 : e.kind === "town"
                   ? assets.art.town
                   : e.kind === "fort"
@@ -1357,7 +1541,7 @@ export function journeyMap(
         e.player !== undefined ? state.players[e.player] : undefined;
       const recorded = e.actions.length
         ? turnHistory(e.actions, state, assets)
-        : `${owner ? `<div class="map-detail-owner">${assets.portraits[e.player!]}<span>Card played by ${esc(owner.name)}${e.turn ? ` · turn ${e.turn}` : ""}</span></div>` : ""}${e.kind !== "start" && e.kind !== "finish" ? `<p class="map-record-note">Detailed turn history is unavailable for this marker. Outcomes below may span several players’ turns.</p>` : ""}${[...new Set(report?.results ?? [])].map((t) => `<p>${esc(t)}</p>`).join("")}${(
+        : `${owner ? `<div class="map-detail-owner">${assets.portraits[e.player!]}<span>Card played by ${esc(owner.name)}${e.turn ? ` on turn ${e.turn}` : ""}</span></div>` : ""}${e.kind !== "start" && e.kind !== "finish" ? `<p class="map-record-note">Detailed turn history is unavailable for this marker. Outcomes below may span several players’ turns.</p>` : ""}${[...new Set((report?.results ?? []).map(mapResultText).filter(Boolean))].map((t) => `<p>${esc(t)}</p>`).join("")}${(
             report?.deaths ?? []
           )
             .map((d) => {
@@ -1371,7 +1555,7 @@ export function journeyMap(
           ? `Departed ${calendarDate(state.startDate ?? "1847-04-01")} from Independence, Missouri.`
           : e.kind === "finish"
             ? state.note
-            : `Trail card ${e.trailStep ?? e.step} of 50${stopTurns.length > 1 ? ` · Turns ${Math.min(...stopTurns)}–${Math.max(...stopTurns)} at this stop` : ""}`;
+            : `Trail card ${e.trailStep ?? e.step} of 50${stopTurns.length > 1 ? ` — Turns ${Math.min(...stopTurns)}–${Math.max(...stopTurns)} at this stop` : ""}`;
       const content = `<div class="map-tooltip-summary"><img class="map-detail-art" src="${image}" alt=""><div><p class="eyebrow">${e.kind === "start" ? "Departure" : e.kind === "finish" ? "Journey status" : e.turn !== undefined ? `Turn ${e.turn}` : `Trail marker ${e.trailStep ?? e.step}`}</p><h4>${esc(e.title)}</h4><p>${esc(description)}</p></div></div>${recorded}`;
       const cueActions = e.actions.length
         ? groupSupplyActions(e.actions)
@@ -1387,7 +1571,17 @@ export function journeyMap(
                 ? assets.art.mapStopped
                 : assets.art.progressWagon;
       for (const action of cueActions) {
+        if (action?.wagonState !== undefined && e.kind !== "finish")
+          markerIcon =
+            (action.wagonAfter ?? action.wagonState) === "broken"
+              ? assets.art.mapStopped
+              : (action.wagonAfter ?? action.wagonState) === "settlement"
+                ? e.card?.type === "fort"
+                  ? assets.art.mapFort
+                  : assets.art.mapTown
+                : assets.art.progressWagon;
         if (
+          action?.wagonState === undefined &&
           mapStopKind(e) === "stopped" &&
           (action?.type === "cure" ||
             action?.type === "town" ||
@@ -1396,27 +1590,44 @@ export function journeyMap(
           markerIcon = assets.art.progressWagon;
         const day =
           action?.day ??
-          action?.turn ??
-          (e.kind === "start" ? 1 : (e.day ?? e.turn ?? journeyDay(state)));
+          (e.kind === "start" ? 1 : (e.day ?? journeyDay(state)));
         playback.push({
+          playerStates: action?.playerStatesAfter ?? playerStates,
+          summary:
+            e.kind === "finish" ? playbackPartySummary(state) : undefined,
+          turn:
+            action?.turn ??
+            (e.kind === "finish"
+              ? undefined
+              : (e.turn ?? record?.initial.turn)),
+          player:
+            e.kind === "finish"
+              ? undefined
+              : (action?.player ?? e.player ?? record?.initial.current),
+          living: action?.livingAfter ?? living,
           step: e.step,
           progress,
           day,
           date: calendarDate(journeyDate(day - 1, state.startDate)),
           hold: playbackHold(e, action),
-          content: playbackContent(e, image, state, assets),
+          content: playbackContent(e, image, state, assets, action),
           title: e.title,
           image,
           marker: markerIcon ?? assets.art.progressWagon,
+          markerFacesWest:
+            markerIcon !== assets.art.mapFort &&
+            markerIcon !== assets.art.mapTown,
           toasts: playbackToasts(action, state, assets),
         });
+        living = action?.livingAfter ?? living;
+        playerStates = action?.playerStatesAfter ?? playerStates;
       }
       const turns = new Set(e.actions.map((a) => `${a.turn}:${a.player}`)).size;
       const dot =
         quiet || e.kind === "finish"
           ? ""
           : `<button type="button" class="map-trail-dot ${mapStopKind(e) === "settlement" ? "is-settlement" : ""}" style="left:${point.x / 16}%;top:${point.y / 9}%" data-map-dot-target="${e.step}" data-map-progress="${progress}" data-map-content="${esc(content)}" aria-label="${esc(e.title)}: event details"></button>`;
-      return `${dot}<button type="button" class="map-marker map-marker-${mapStopKind(e)} ${quiet ? "is-quiet" : ""} ${e.kind === "finish" || e.kind === "start" ? "is-endpoint" : ""}" style="left:${detail.x / 16}%;top:${detail.y / 9}%" data-map-marker data-map-step="${e.step}" data-map-progress="${progress}" data-map-content="${esc(content)}" aria-label="${e.kind === "start" ? "Start" : e.kind === "finish" ? "Current outcome" : e.turn !== undefined ? `Turn ${e.turn}` : `Card ${e.trailStep ?? e.step}`}: ${esc(e.title)}${turns > 1 ? ` · ${turns} turns` : ""}"><span class="map-marker-image"><img src="${image}" alt="">${report?.deaths?.length ? `<img class="map-death-badge" src="${assets.art.tombstoneIcon}" alt="Death">` : ""}</span>${e.kind === "start" || e.kind === "finish" ? `<span class="map-marker-label">${esc(e.title)}</span>` : ""}</button>`;
+      return `${dot}<button type="button" class="map-marker map-marker-${mapStopKind(e)} ${quiet ? "is-quiet" : ""} ${e.kind === "finish" || e.kind === "start" ? "is-endpoint" : ""}" style="left:${detail.x / 16}%;top:${detail.y / 9}%" data-map-marker data-map-step="${e.step}" data-map-progress="${progress}" data-map-content="${esc(content)}" aria-label="${e.kind === "start" ? "Start" : e.kind === "finish" ? "Current outcome" : e.turn !== undefined ? `Turn ${e.turn}` : `Card ${e.trailStep ?? e.step}`}: ${esc(e.title)}${turns > 1 ? ` — ${turns} turns` : ""}"><span class="map-marker-image"><img class="${image === assets.art.progressWagon ? "faces-west" : ""}" src="${image}" alt="">${report?.deaths?.length ? `<img class="map-death-badge" src="${assets.art.tombstoneIcon}" alt="Death">` : ""}</span>${e.kind === "start" || e.kind === "finish" ? `<span class="map-marker-label">${esc(e.title)}</span>` : ""}</button>`;
     })
     .join("");
   const landmarks = [
@@ -1425,14 +1636,14 @@ export function journeyMap(
     ["Fort Hall", -112.65, 43.03],
     ["The Dalles", -121.18, 45.6],
   ] as const;
-  return `<section class="journey-map geographic-map" data-map-start="${state.startDate ?? "1847-04-01"}" aria-label="Illustrated journey timeline"><div class="map-playback" aria-label="Journey playback"><button type="button" data-map-play aria-label="Play journey" title="Play journey"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7Z"/></svg></button><button type="button" data-map-restart aria-label="Restart journey playback" title="Restart journey playback"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M5 8a8 8 0 1 1-1 7M5 3v6h6"/></svg></button><select data-map-speed aria-label="Playback speed"><option value="1">1×</option><option value="2">2×</option><option value="4">4×</option></select><div class="map-playback-timing"><input type="range" data-map-seek min="0" max="1000" value="0" aria-label="Playback position"><div><output data-map-elapsed>0:00</output><span> / </span><output data-map-duration>0:00</output></div></div></div><output class="map-playback-date" aria-live="off"><span class="map-playback-day">Journey playback</span><time>${calendarDate(state.startDate ?? "1847-04-01")}</time><small class="map-playback-clock" title="Simulated time of day">8:00 am</small></output><script type="application/json" data-map-cues>${JSON.stringify(playback).replaceAll("<", "\\u003c")}</script><div class="map-tools" aria-label="Map controls"><button data-map-zoom="out" aria-label="Zoom out" title="Zoom out">−</button><button data-map-zoom="in" aria-label="Zoom in" title="Zoom in">+</button><button data-map-zoom="fit" aria-label="Fit whole map" title="Fit whole map"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 9V4h5m6 0h5v5m0 6v5h-5M9 20H4v-5"/></svg></button><output class="map-zoom-level" aria-live="polite">100%</output></div><div class="journey-map-scroll" tabindex="0" aria-label="Scroll the journey map"><div class="journey-map-stage"><div class="journey-map-canvas"><img class="journey-map-background" src="${assets.art.journeyMap}" alt="Weathered north-up map of the western United States"><svg class="journey-map-terrain" viewBox="0 0 1600 900" aria-hidden="true"><path class="map-route-shadow" d="${path}"/><path class="map-route-remaining" d="${path}"/><path class="map-route-completed-halo" d="${path}" pathLength="100" stroke-dasharray="${Math.min(100, state.count * 2)} 100"/><path class="map-route" d="${path}" pathLength="100" stroke-dasharray="${Math.min(100, state.count * 2)} 100"/>${landmarks
+  return `<section class="journey-map geographic-map" data-map-start="${state.startDate ?? "1847-04-01"}" aria-label="Illustrated journey timeline"><div class="map-playback" aria-label="Journey playback"><button type="button" data-map-prev-turn aria-label="Previous turn" title="Previous turn" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h2v14H5Zm13 0L8 12l10 7Z"/></svg></button><button type="button" data-map-play aria-label="Play journey" title="Play journey"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7Z"/></svg></button><button type="button" data-map-next-turn aria-label="Next turn" title="Next turn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 5h2v14h-2ZM6 5l10 7-10 7Z"/></svg></button><button type="button" data-map-restart aria-label="Restart journey playback" title="Restart journey playback"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M5 8a8 8 0 1 1-1 7M5 3v6h6"/></svg></button><select data-map-speed aria-label="Playback speed"><option value="0.5">½×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select><div class="map-playback-timing"><input type="range" data-map-seek min="0" max="1000" value="0" aria-label="Playback position"><div><output data-map-elapsed>0:00</output><span> / </span><output data-map-duration>0:00</output></div></div></div><div class="map-playback-date" aria-live="off"><div class="playback-date-copy"><span class="map-playback-day">Journey playback</span><time>${calendarDate(state.startDate ?? "1847-04-01")}</time><small class="map-playback-clock" title="Simulated time of day">8:00 am</small></div><div class="map-playback-roster" aria-label="Playback travellers"><div class="playback-player-portraits">${state.players.map((p, i) => `<span class="playback-player${p.alive ? "" : " is-dead"}" data-playback-player="${i}" data-player-name="${esc(p.name)}" tabindex="0" aria-label="${esc(p.name)}: current state" data-map-content="${esc(rosterTooltip(p.name, assets.portraits[i] ?? "", playbackPlayerStates(state)[i], calendarDate(journeyDate(journeyDay(state) - 1, state.startDate))))}">${assets.portraits[i] ?? ""}<img class="playback-player-grave" src="${assets.art.tombstoneIcon}" alt="Gravestone for ${esc(p.name)}"><span class="playback-player-turn" aria-hidden="true">▸</span></span>`).join("")}</div><span data-playback-player-label></span></div></div><script type="application/json" data-map-cues>${JSON.stringify(playback).replaceAll("<", "\\u003c")}</script><div class="map-tools" aria-label="Map controls"><button data-map-zoom="out" aria-label="Zoom out" title="Zoom out">−</button><button data-map-zoom="in" aria-label="Zoom in" title="Zoom in">+</button><button data-map-zoom="fit" aria-label="Fit whole map" title="Fit whole map"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 9V4h5m6 0h5v5m0 6v5h-5M9 20H4v-5"/></svg></button><output class="map-zoom-level" aria-live="polite">100%</output></div><div class="journey-map-scroll" tabindex="0" aria-label="Scroll the journey map"><div class="journey-map-stage"><div class="journey-map-canvas"><img class="journey-map-background" src="${assets.art.journeyMap}" alt="Weathered north-up map of the western United States"><svg class="journey-map-terrain" viewBox="0 0 1600 900" aria-hidden="true"><path class="map-route-shadow" d="${path}"/><path class="map-route-remaining" d="${path}"/><path class="map-route-completed-halo" d="${path}" pathLength="100" stroke-dasharray="${Math.min(100, state.count * 2)} 100"/><path class="map-route" d="${path}" pathLength="100" stroke-dasharray="${Math.min(100, state.count * 2)} 100"/>${landmarks
     .map(([name, lon, lat]) => {
       const p = project([lon, lat]);
       return `<g class="map-landmark"><circle cx="${p.x}" cy="${p.y}" r="3"/><text x="${p.x}" y="${p.y - 54}" text-anchor="middle">${name}</text></g>`;
     })
     .join(
       "",
-    )}<text class="map-geographic-label" x="200" y="180">OREGON COUNTRY</text><text class="map-geographic-label" x="1120" y="700">GREAT PLAINS</text><text class="map-geographic-label" x="810" y="255" transform="rotate(-20 810 255)">ROCKY MOUNTAINS</text><text class="map-geographic-label" x="60" y="670" transform="rotate(-90 60 670)">PACIFIC OCEAN</text><g class="map-compass" transform="translate(1450 120)"><path d="M0-35 9 0 0 35-9 0Z"/><path d="M-25 0H25"/><text y="-44" text-anchor="middle">N</text></g><g class="map-connectors">${connectors.join("")}</g><g class="map-dots">${trailAnchors.sort((a, b) => Number(a.includes("map-stop-settlement")) - Number(b.includes("map-stop-settlement"))).join("")}</g>${mapOutcome(state, routePoint(state.count / 50), assets)}</svg>${state.status !== "won" ? '<span class="map-destination-label" style="left:10%;top:24%">Oregon City<br><small>Willamette Valley</small></span>' : ""}${markers}<div class="map-playback-wagon" data-map-progress="0" hidden><img src="${assets.art.progressWagon}" alt="The wagon"></div></div></div></div>${mapLegend(assets)}<svg class="playback-callout-leader" aria-hidden="true" hidden><path/><circle r="3"/></svg><aside class="map-playback-callout" hidden aria-label="Current trail event"></aside><div class="map-playback-toasts" aria-live="polite" aria-label="Journey actions"></div></section>`;
+    )}<text class="map-geographic-label" x="200" y="180">OREGON COUNTRY</text><text class="map-geographic-label" x="1120" y="700">GREAT PLAINS</text><text class="map-geographic-label" x="810" y="255" transform="rotate(-20 810 255)">ROCKY MOUNTAINS</text><text class="map-geographic-label" x="60" y="670" transform="rotate(-90 60 670)">PACIFIC OCEAN</text><g class="map-compass" transform="translate(1450 120)"><path d="M0-35 9 0 0 35-9 0Z"/><path d="M-25 0H25"/><text y="-44" text-anchor="middle">N</text></g><g class="map-connectors">${connectors.join("")}</g><g class="map-dots">${trailAnchors.sort((a, b) => Number(a.includes("map-stop-settlement")) - Number(b.includes("map-stop-settlement"))).join("")}</g>${mapOutcome(state, routePoint(state.count / 50), assets)}</svg>${state.status !== "won" ? '<span class="map-destination-label" style="left:10%;top:24%">Oregon City<br><small>Willamette Valley</small></span>' : ""}${markers}<div class="map-playback-wagon" data-map-progress="0" hidden><img class="faces-west" src="${assets.art.progressWagon}" alt="The wagon"></div></div></div></div>${mapLegend(assets)}<svg class="playback-callout-leader" aria-hidden="true" hidden><path/><circle r="3"/></svg><aside class="map-playback-callout" hidden aria-label="Current trail event"></aside><div class="map-playback-toasts" aria-live="polite" aria-label="Journey actions"></div></section>`;
 }
 export function journeyMapPreview(
   state: Journey,
@@ -1446,7 +1657,7 @@ export function journeyMapPreview(
   const x = Math.max(0, Math.min(1600 - width, end.x - width / 2));
   const y = Math.max(0, Math.min(900 - height, end.y - height / 2));
   const path = routePath;
-  return `<button class="journey-map-preview ${extraClass}" ${attributes} aria-label="Explore journey map near the wagon’s latest position"><svg viewBox="${x} ${y} ${width} ${height}" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><image href="${assets.art.journeyMap}" x="0" y="0" width="1600" height="900"/><path class="map-route-remaining" d="${path}"/><path class="map-route-completed-halo" d="${path}" pathLength="100" stroke-dasharray="${Math.min(100, state.count * 2)} 100"/><path class="map-preview-travelled" d="${path}" pathLength="100" stroke-dasharray="${Math.min(100, state.count * 2)} 100"/>${state.status === "travel" ? `<circle cx="${end.x}" cy="${end.y}" r="24" fill="var(--paper)" stroke="#59654b" stroke-width="2"/><image href="${assets.art.progressWagon}" x="${end.x - 22}" y="${end.y - 20}" width="44" height="40"/>` : mapOutcome(state, end, assets)}</svg><span class="map-preview-caption"><strong>${state.status === "travel" ? "The latest stretch of trail" : "Your journey’s final stretch"}</strong><span>Explore map →</span></span></button>`;
+  return `<button class="journey-map-preview ${extraClass}" ${attributes} aria-label="Explore journey map near the wagon’s latest position"><svg viewBox="${x} ${y} ${width} ${height}" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><image href="${assets.art.journeyMap}" x="0" y="0" width="1600" height="900"/><path class="map-route-remaining" d="${path}"/><path class="map-route-completed-halo" d="${path}" pathLength="100" stroke-dasharray="${Math.min(100, state.count * 2)} 100"/><path class="map-preview-travelled" d="${path}" pathLength="100" stroke-dasharray="${Math.min(100, state.count * 2)} 100"/>${state.status === "travel" ? `<circle cx="${end.x}" cy="${end.y}" r="24" fill="var(--paper)" stroke="#59654b" stroke-width="2"/><image transform="translate(${end.x * 2} 0) scale(-1 1)" href="${assets.art.progressWagon}" x="${end.x - 22}" y="${end.y - 20}" width="44" height="40"/>` : mapOutcome(state, end, assets)}</svg><span class="map-preview-caption"><strong>${state.status === "travel" ? "The latest stretch of trail" : "Your journey’s final stretch"}</strong><span>Explore map →</span></span></button>`;
 }
 export function installJourneyMapInteraction() {
   let active: HTMLElement | undefined,
@@ -1463,6 +1674,13 @@ export function installJourneyMapInteraction() {
     if (!active?.isConnected || !tooltip) {
       hide();
       return;
+    }
+    if (
+      active.hasAttribute("data-playback-player") &&
+      tooltip.dataset.content !== active.dataset.mapContent
+    ) {
+      tooltip.innerHTML = active.dataset.mapContent ?? "";
+      tooltip.dataset.content = active.dataset.mapContent;
     }
     const r = active.getBoundingClientRect();
     if (r.bottom < 0 || r.top > innerHeight) {
@@ -1513,6 +1731,7 @@ export function installJourneyMapInteraction() {
     tooltip.className = `journey-map-tooltip${playback ? " is-playback" : ""}`;
     tooltip.setAttribute("role", "tooltip");
     tooltip.innerHTML = content;
+    tooltip.dataset.content = content;
     document.body.append(tooltip);
     active.setAttribute("aria-describedby", tooltip.id);
     position();
@@ -1528,29 +1747,30 @@ export function installJourneyMapInteraction() {
   };
   document.addEventListener("pointerover", (event) => {
     const marker = (event.target as Element).closest<HTMLButtonElement>(
-      "[data-map-marker], [data-map-dot-target]",
+      "[data-map-marker], [data-map-dot-target], [data-playback-player]",
     );
     if (
       marker &&
-      marker.closest<HTMLElement>(".journey-map")?.dataset.playbackRunning !==
-        "true"
+      (marker.hasAttribute("data-playback-player") ||
+        marker.closest<HTMLElement>(".journey-map")?.dataset.playbackRunning !==
+          "true")
     )
       show(marker);
   });
   document.addEventListener("pointerout", (event) => {
     if (
       (event.target as Element).closest(
-        "[data-map-marker], [data-map-dot-target]",
+        "[data-map-marker], [data-map-dot-target], [data-playback-player]",
       ) &&
       !(event.relatedTarget as Element | null)?.closest?.(
-        "[data-map-marker], [data-map-dot-target], .journey-map-tooltip",
+        "[data-map-marker], [data-map-dot-target], [data-playback-player], .journey-map-tooltip",
       )
     )
       timer = setTimeout(hide, 120);
   });
   document.addEventListener("focusin", (event) => {
     const marker = (event.target as Element).closest<HTMLButtonElement>(
-      "[data-map-marker], [data-map-dot-target]",
+      "[data-map-marker], [data-map-dot-target], [data-playback-player]",
     );
     if (marker) show(marker);
     else hide();
@@ -1559,7 +1779,7 @@ export function installJourneyMapInteraction() {
     "click",
     (event) => {
       const marker = (event.target as Element).closest<HTMLButtonElement>(
-        "[data-map-marker], [data-map-dot-target]",
+        "[data-map-marker], [data-map-dot-target], [data-playback-player]",
       );
       if (marker) {
         event.stopImmediatePropagation();
@@ -1798,6 +2018,7 @@ export function initializeJourneyMapViewport() {
     point: { x: number; y: number },
     stopped: boolean,
     delta: number,
+    memorial = false,
   ) => {
     cancelAnimationFrame(zoomFrame);
     const smooth = matchMedia("(prefers-reduced-motion: reduce)").matches
@@ -1808,12 +2029,23 @@ export function initializeJourneyMapViewport() {
     update(zoom + (target - zoom) * smooth);
     const rect = canvas.getBoundingClientRect(),
       view = viewport.getBoundingClientRect();
+    const dateBottom =
+      map.querySelector(".map-playback-date")?.getBoundingClientRect().bottom ??
+      view.top;
+    const targetY = memorial
+      ? Math.min(
+          innerHeight - 155,
+          Math.max(
+            view.top + view.height / 2,
+            dateBottom + (view.width < 600 ? 420 : 465),
+          ),
+        )
+      : view.top + view.height / 2;
     viewport.scrollLeft +=
       (rect.left + (point.x / 1600) * rect.width - view.left - view.width / 2) *
       smooth;
     viewport.scrollTop +=
-      (rect.top + (point.y / 900) * rect.height - view.top - view.height / 2) *
-      smooth;
+      (rect.top + (point.y / 900) * rect.height - targetY) * smooth;
     window.dispatchEvent(new Event("journey-map-camera"));
   };
   const disposePlayback = installMapPlayback(
@@ -1839,6 +2071,7 @@ function installMapPlayback(
     point: { x: number; y: number },
     stopped: boolean,
     delta: number,
+    memorial?: boolean,
   ) => void,
 ) {
   const cues = JSON.parse(
@@ -1846,6 +2079,13 @@ function installMapPlayback(
   ) as MapPlaybackCue[];
   const timeline = mapPlaybackTimeline(cues),
     duration = timeline.at(-1)?.end ?? 0;
+  const turnStops = timeline.flatMap((cue, index) =>
+    cue.turn !== undefined &&
+    timeline.findIndex((c) => c.turn === cue.turn) === index
+      ? [index]
+      : [],
+  );
+  let pinnedIndex: number | undefined;
   // Prime marker decodes before their first on-map swap.
   new Set(
     cues.map((cue) => cue.marker).filter((src): src is string => !!src),
@@ -1862,6 +2102,12 @@ function installMapPlayback(
     })),
   );
   const play = map.querySelector<HTMLButtonElement>("[data-map-play]")!;
+  const prevTurn = map.querySelector<HTMLButtonElement>(
+    "[data-map-prev-turn]",
+  )!;
+  const nextTurn = map.querySelector<HTMLButtonElement>(
+    "[data-map-next-turn]",
+  )!;
   const restart = map.querySelector<HTMLButtonElement>("[data-map-restart]")!;
   const speed = map.querySelector<HTMLSelectElement>("[data-map-speed]")!;
   const seek = map.querySelector<HTMLInputElement>("[data-map-seek]")!;
@@ -1892,15 +2138,22 @@ function installMapPlayback(
     previous = 0,
     running = false,
     started = false;
+  let shownIndex = -1;
+  let stepping = false;
+  let resumeAfterStep = false;
+  let shownContent = "";
   let shownStep = -1,
     lastToast = -1,
     presented: MapPlaybackCue | undefined;
-  const toasts: { el: HTMLDivElement; at: number }[] = [];
+  const toasts: { el: HTMLDivElement; born: number; retiring?: number }[] = [];
+  let toastFrame = 0;
+  let steppedToast: { toast: PlaybackToast; at: number } | undefined;
   const hideHover = () =>
     window.dispatchEvent(new Event("journey-map-playback-hide"));
   const updateButton = () => {
-    map.dataset.playbackRunning = String(running);
-    const label = running
+    const playing = running || stepping;
+    map.dataset.playbackRunning = String(playing);
+    const label = playing
       ? "Pause journey"
       : elapsed >= duration
         ? "Replay journey"
@@ -1909,11 +2162,13 @@ function installMapPlayback(
           : "Play journey";
     play.setAttribute("aria-label", label);
     play.title = label;
-    play.setAttribute("aria-pressed", String(running));
-    play.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${running ? "M7 5h4v14H7ZM14 5h4v14h-4Z" : "m8 5 11 7-11 7Z"}"/></svg>`;
+    play.setAttribute("aria-pressed", String(playing));
+    play.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${playing ? "M7 5h4v14H7ZM14 5h4v14h-4Z" : "m8 5 11 7-11 7Z"}"/></svg>`;
   };
   const pause = () => {
     running = false;
+    stepping = false;
+    resumeAfterStep = false;
     cancelAnimationFrame(frame);
     updateButton();
   };
@@ -1927,9 +2182,10 @@ function installMapPlayback(
   };
   const positionDetails = () => {
     if (!presented) return;
-    const point = screenPoint(
+    const wagonPoint = screenPoint(
         Number(wagon.dataset.mapProgress ?? presented.progress),
       ),
+      point = screenPoint(presented.progress),
       view = viewport.getBoundingClientRect(),
       base = map.getBoundingClientRect();
     const visible =
@@ -1946,7 +2202,7 @@ function installMapPlayback(
         view.left + 10,
         Math.min(view.right - width - 10, point.x - width / 2),
       );
-      // Artwork stays above the wagon; action notifications occupy the space below.
+      // Artwork belongs to the event's trail location, independently of the wagon.
       const top = point.y - height - 52;
       callout.style.left = `${left - base.left}px`;
       callout.style.top = `${top - base.top}px`;
@@ -1969,27 +2225,37 @@ function installMapPlayback(
       dot.setAttribute("cy", String(point.y - base.top));
     }
     if (toasts.length) {
-      stack.style.left = `${point.x - base.left}px`;
-      stack.style.top = `${point.y + 54 - base.top}px`;
+      stack.style.left = `${wagonPoint.x - base.left}px`;
+      stack.style.top = `${wagonPoint.y + 54 - base.top}px`;
       stack.style.maxWidth = `${Math.max(120, Math.min(360, view.width - 24))}px`;
       // Keep the naturally sized stack inside the map at either edge.
       const width = stack.offsetWidth;
-      stack.style.left = `${Math.max(view.left + width / 2 + 10, Math.min(view.right - width / 2 - 10, point.x)) - base.left}px`;
-      stack.hidden = !visible;
+      stack.style.left = `${Math.max(view.left + width / 2 + 10, Math.min(view.right - width / 2 - 10, wagonPoint.x)) - base.left}px`;
+      stack.hidden =
+        wagonPoint.x < view.left + 8 ||
+        wagonPoint.x > view.right - 8 ||
+        wagonPoint.y < view.top + 8 ||
+        wagonPoint.y > view.bottom - 8;
     }
   };
   const clearToasts = () => {
+    cancelAnimationFrame(toastFrame);
+    toastFrame = 0;
     toasts.forEach((t) => t.el.remove());
     toasts.length = 0;
   };
   const showToasts = () => {
     // Present at most one new action per frame, with a fixed gap in playback time.
     if (
-      lastToast + 1 < notifications.length &&
-      notifications[lastToast + 1].at <= elapsed
+      steppedToast ||
+      (!stepping &&
+        pinnedIndex === undefined &&
+        lastToast + 1 < notifications.length &&
+        notifications[lastToast + 1].at <= elapsed)
     ) {
-      const notification = notifications[++lastToast];
-      if (elapsed - notification.at < 6500) {
+      const notification = steppedToast ?? notifications[++lastToast];
+      steppedToast = undefined;
+      if (elapsed - notification.at < 13000) {
         const toast = notification.toast;
         const el = document.createElement("div");
         el.className = `map-playback-toast tone-${toast.tone}`;
@@ -1998,7 +2264,7 @@ function installMapPlayback(
         el.setAttribute("role", "status");
         el.dataset.playbackAt = String(notification.at);
         stack.append(el);
-        toasts.push({ el, at: notification.at });
+        toasts.push({ el, born: performance.now() });
         if (!reduced.matches)
           el.animate(
             [
@@ -2009,13 +2275,25 @@ function installMapPlayback(
           );
       }
     }
-    while (toasts.length > 3) {
-      toasts.shift()!.el.remove();
-    }
+    refreshToasts();
+    if (toasts.length && !toastFrame)
+      toastFrame = requestAnimationFrame(ageToasts);
+  };
+  const refreshToasts = () => {
+    const now = performance.now();
+    const activeToasts = toasts.filter((toast) => toast.retiring === undefined);
+    activeToasts
+      .slice(0, Math.max(0, activeToasts.length - 3))
+      .forEach((toast) => {
+        toast.retiring = now;
+      });
     for (let i = toasts.length - 1; i >= 0; i--) {
       const toast = toasts[i],
-        age = elapsed - toast.at;
-      if (age >= 6500) {
+        age = now - toast.born;
+      if (
+        age >= 6600 ||
+        (toast.retiring !== undefined && now - toast.retiring >= 700)
+      ) {
         toast.el.remove();
         toasts.splice(i, 1);
       }
@@ -2025,28 +2303,36 @@ function installMapPlayback(
     stack.style.height = front ? `${front.offsetHeight}px` : "";
     for (let i = 0; i < toasts.length; i++) {
       const toast = toasts[i],
-        depth = toasts.length - 1 - i;
+        depth = Math.min(3, toasts.length - 1 - i);
       toast.el.style.zIndex = String(3 - depth);
       toast.el.style.transform = `translateX(-50%) translateY(${-depth * 9}px) scale(${1 - depth * 0.055})`;
       toast.el.style.opacity = String(
-        Math.min(1, (6500 - (elapsed - toast.at)) / 1500) * (1 - depth * 0.24),
+        Math.max(0, Math.min(1, (6500 - (now - toast.born)) / 1000)) *
+          (toast.retiring === undefined
+            ? 1
+            : Math.max(0, 1 - (now - toast.retiring) / 600)) *
+          (1 - depth * 0.24),
       );
       toast.el.setAttribute("aria-hidden", String(depth > 0));
     }
   };
+  const ageToasts = () => {
+    toastFrame = 0;
+    if (!map.isConnected) return;
+    refreshToasts();
+    positionDetails();
+    if (toasts.length) toastFrame = requestAnimationFrame(ageToasts);
+  };
   const draw = (delta = 16) => {
     const found = timeline.findIndex((c) => elapsed < c.end),
-      index = found < 0 ? timeline.length - 1 : found,
+      index = pinnedIndex ?? (found < 0 ? timeline.length - 1 : found),
       cue = timeline[index];
     if (!cue) return;
     const moving = elapsed < cue.arrive;
-    const fraction = moving
-      ? Math.max(
-          0,
-          Math.min(1, (elapsed - cue.start) / (cue.arrive - cue.start || 1)),
-        )
-      : 1;
-    const progress = cue.from + (cue.progress - cue.from) * fraction;
+    const progress =
+      pinnedIndex !== undefined
+        ? cue.progress
+        : mapPlaybackProgress(timeline, elapsed);
     path.setAttribute("stroke-dasharray", `${progress * 100} 100`);
     halo.setAttribute("stroke-dasharray", `${progress * 100} 100`);
     const point = routePoint(progress);
@@ -2055,11 +2341,20 @@ function installMapPlayback(
     wagon.style.top = `${point.y / 9}%`;
     wagon.dataset.mapProgress = String(progress);
     const icon = moving ? defaultIcon : (cue.marker ?? defaultIcon);
+    wagonImage.classList.toggle(
+      "faces-west",
+      moving || cue.markerFacesWest === true,
+    );
     if (wagonImage.getAttribute("src") !== icon) {
       wagonImage.src = icon;
       wagonImage.alt = moving ? "The wagon" : (cue.title ?? "The wagon");
     }
-    followWagon(point, !moving && cue.hold > 0, delta);
+    followWagon(
+      point,
+      !moving && cue.hold > 0,
+      delta,
+      !moving && cue.content.includes("playback-death-event"),
+    );
     map
       .querySelectorAll<HTMLElement | SVGElement>(
         "[data-map-step], [data-map-dot-target], [data-map-dot], [data-map-connector]",
@@ -2098,11 +2393,54 @@ function installMapPlayback(
       "aria-valuetext",
       `${formatTime(elapsed)} of ${formatTime(duration)}`,
     );
-    const displayIndex = moving ? Math.max(0, index - 1) : index;
+    const displayIndex =
+      pinnedIndex ?? (moving ? Math.max(0, index - 1) : index);
     presented = timeline[displayIndex];
-    if (shownStep !== presented.step) {
+    shownIndex = displayIndex;
+    const currentTurn = turnStops.reduce(
+      (current, i, turn) => (i <= shownIndex ? turn : current),
+      -1,
+    );
+    prevTurn.disabled = currentTurn <= 0;
+    nextTurn.disabled = currentTurn >= turnStops.length - 1;
+    map
+      .querySelectorAll<HTMLElement>("[data-playback-player]")
+      .forEach((el) => {
+        const player = Number(el.dataset.playbackPlayer);
+        const active = player === presented!.player;
+        const alive = presented!.living?.includes(player) ?? true;
+        el.classList.toggle("is-active", active);
+        el.classList.toggle("is-dead", !alive);
+        if (active) el.setAttribute("aria-current", "true");
+        else el.removeAttribute("aria-current");
+        el.dataset.mapContent = rosterTooltip(
+          el.dataset.playerName!,
+          el.querySelector(".portrait")?.outerHTML ?? "",
+          presented!.playerStates?.[player] ?? [],
+          `${date.textContent}, ${simulated.time}`,
+        );
+      });
+    const playerLabel = map.querySelector<HTMLElement>(
+      "[data-playback-player-label]",
+    );
+    if (playerLabel) {
+      const current = map.querySelector<HTMLElement>(
+        `[data-playback-player="${presented.player}"]`,
+      );
+      playerLabel.textContent = current
+        ? `${current.dataset.playerName}’s turn`
+        : presented.step === timeline.at(-1)?.step
+          ? (presented.summary ?? "")
+          : "";
+    }
+    if (shownStep !== presented.step || shownContent !== presented.content) {
       shownStep = presented.step;
+      shownContent = presented.content;
       callout.innerHTML = presented.content;
+      callout.classList.toggle(
+        "is-death-event",
+        !!callout.querySelector(".playback-death-event"),
+      );
       callout.hidden = false;
       if (!reduced.matches)
         callout.animate(
@@ -2132,6 +2470,8 @@ function installMapPlayback(
     else frame = requestAnimationFrame(tick);
   };
   const start = (reset = false) => {
+    stepping = false;
+    pinnedIndex = undefined;
     if (!timeline.length) return;
     if (reset || elapsed >= duration) {
       elapsed = 0;
@@ -2152,16 +2492,84 @@ function installMapPlayback(
     cancelAnimationFrame(frame);
     frame = requestAnimationFrame(tick);
   };
-  play.addEventListener("click", () => (running ? pause() : start()), {
+  play.addEventListener(
+    "click",
+    () => (running || stepping ? pause() : start()),
+    {
+      signal: abort.signal,
+    },
+  );
+  restart.addEventListener("click", () => start(true), {
     signal: abort.signal,
   });
-  restart.addEventListener("click", () => start(true), {
+  const stepTurn = (direction: number) => {
+    const wasPlaying = running || (stepping && resumeAfterStep);
+    pause();
+    resumeAfterStep = wasPlaying;
+    hideHover();
+    const current = turnStops.reduce(
+      (current, i, turn) => (i <= shownIndex ? turn : current),
+      -1,
+    );
+    const target =
+      turnStops[
+        Math.max(0, Math.min(turnStops.length - 1, current + direction))
+      ];
+    if (target === undefined) return;
+    if (!started) {
+      map.classList.add("is-playing-journey");
+      fit();
+      started = true;
+    }
+    pinnedIndex = undefined;
+    clearToasts();
+    const destination = timeline[target].arrive;
+    const finish = () => {
+      stepping = false;
+      elapsed = destination;
+      pinnedIndex = target;
+      const toast = timeline[target].toasts?.[0];
+      steppedToast = toast ? { toast, at: elapsed } : undefined;
+      const future = notifications.findIndex((n) => n.at > elapsed);
+      lastToast = (future < 0 ? notifications.length : future) - 1;
+      shownStep = -1;
+      draw();
+      if (resumeAfterStep) start();
+      else updateButton();
+    };
+    if (reduced.matches || destination === elapsed) {
+      finish();
+      return;
+    }
+    stepping = true;
+    let lastFrame = performance.now();
+    const sweep = (now: number) => {
+      if (!stepping || !map.isConnected) return;
+      const delta = Math.min(100, now - lastFrame);
+      lastFrame = now;
+      const distance = destination - elapsed;
+      if (Math.abs(distance) <= delta * 10) {
+        finish();
+        return;
+      }
+      elapsed += Math.sign(distance) * delta * 10;
+      draw(delta);
+      frame = requestAnimationFrame(sweep);
+    };
+    updateButton();
+    frame = requestAnimationFrame(sweep);
+  };
+  prevTurn.addEventListener("click", () => stepTurn(-1), {
+    signal: abort.signal,
+  });
+  nextTurn.addEventListener("click", () => stepTurn(1), {
     signal: abort.signal,
   });
   seek.addEventListener(
     "input",
     () => {
       pause();
+      pinnedIndex = undefined;
       hideHover();
       if (!started) {
         map.classList.add("is-playing-journey");
