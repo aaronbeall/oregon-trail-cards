@@ -16,7 +16,8 @@ async function load(file) {
     `data:text/javascript;base64,${Buffer.from(source).toString("base64")}`
   );
 }
-const { GameHistory, HISTORY_KEY, replayGame } = await load("../History.ts");
+const { GameHistory, HISTORY_KEY, replayGame, calendarReplay } =
+  await load("../History.ts");
 const { TrailGame, names } = await load("../TrailCard.ts");
 function setup() {
   let serial = 0;
@@ -227,4 +228,34 @@ test("failed or unknown journey selection leaves archive untouched", () => {
   assert.throws(() => history.select(before.active), /Storage full/);
   assert.deepEqual(history.archive, before);
   storage.setItem = write;
+});
+
+test("legacy calendar projection compresses river attempts without rewriting the archive or exact replay", () => {
+  const { game: g, history: h } = setup();
+  g.state.players[0].hand = [
+    { id: 9900, type: "river", left: 1, right: 1, rotated: false },
+  ];
+  h.capture(g.state, { type: "start" });
+  assert.ok(g.play(0));
+  h.capture(g.state, { type: "play", args: { play: "0" } });
+  for (const random of [0.4, 0.7, 0.3]) {
+    g.random = () => random;
+    assert.ok(g.cross());
+    h.capture(g.state, { type: "roll", rolls: [g.state.die] });
+  }
+  const legacy = structuredClone(h.archive.games.at(-1));
+  delete legacy.initial.day;
+  for (const event of legacy.events) {
+    delete event.day;
+    event.changes = event.changes.filter((change) => change.path[0] !== "day");
+  }
+  const original = structuredClone(legacy);
+  const raw = replayGame(legacy);
+  const calendar = calendarReplay(legacy);
+  assert.equal(raw.day, undefined);
+  assert.equal(raw.turn, 4);
+  assert.equal(calendar.state.day, 2);
+  assert.deepEqual(calendar.eventDays, [1, 1, 1, 1]);
+  assert.deepEqual(legacy, original);
+  assert.deepEqual(replayGame(legacy), raw);
 });

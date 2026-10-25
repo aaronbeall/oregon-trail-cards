@@ -9,6 +9,7 @@ import {
   description,
   portraitBirthdays,
   journeyDate,
+  journeyDay,
   nextJourneyStartDate,
   calendarDate,
   hazardDeadline,
@@ -34,7 +35,12 @@ import { reconcile } from "./Render";
 import { advanceSimulation } from "./Simulation";
 import type { FlowMode } from "./Flows";
 import { supplyEmblem, supplyColor, supplyCollectionEmblem } from "./Supplies";
-import { GameHistory, replayGame, type GameAction } from "./History";
+import {
+  GameHistory,
+  replayGame,
+  calendarReplay,
+  type GameAction,
+} from "./History";
 import {
   gameStatistics,
   summarizeJourneys,
@@ -61,6 +67,7 @@ let saved;
 try {
   saved = readSave(localStorage.getItem(key));
 } catch {}
+const savedDayMissing = !!saved && saved.day === undefined;
 const pendingRolls: number[] = [];
 let revealedCalamity: Calamity | undefined;
 let game = new TrailGame(
@@ -106,6 +113,10 @@ const art = {
   independence: new URL("./assets/independence.webp", import.meta.url).href,
   victory: new URL("./assets/journey-victory.webp", import.meta.url).href,
   defeat: new URL("./assets/journey-defeat.webp", import.meta.url).href,
+  mapFort: new URL("./assets/map-marker-fort.png", import.meta.url).href,
+  mapTown: new URL("./assets/map-marker-town.png", import.meta.url).href,
+  mapStopped: new URL("./assets/map-marker-stopped.png", import.meta.url).href,
+  mapLost: new URL("./assets/map-marker-lost.png", import.meta.url).href,
   progressWagon: new URL("./assets/progress-wagon.webp", import.meta.url).href,
   fort: new URL("./assets/fort.webp", import.meta.url).href,
   shop: new URL("./assets/shop.webp", import.meta.url).href,
@@ -193,6 +204,27 @@ let setup = !game.state.started,
 let history: GameHistory | undefined;
 try {
   history = new GameHistory(localStorage);
+  if (savedDayMissing) {
+    const active = history.archive.games.find(
+      (record) => record.id === history!.archive.active,
+    );
+    if (active) {
+      const projected = calendarReplay(active).state;
+      if (
+        projected.turn === game.state.turn &&
+        projected.count === game.state.count
+      ) {
+        game.state.day = projected.day;
+        projected.players.forEach((person, index) => {
+          if (!person.alive)
+            Object.assign(game.state.players[index], {
+              deathDay: person.deathDay,
+              deathDate: person.deathDate,
+            });
+        });
+      }
+    }
+  }
 } catch {
   storageAvailable = false;
 }
@@ -1498,7 +1530,7 @@ function decision() {
         );
     }
   }
-  return `<section class="decision turn-decision" aria-live="polite"><p class="eyebrow">${s.status === "travel" ? `Day ${s.turn}` : "Journey’s end"}</p><div class="turn-header" data-turn-player="${s.phase === "legacy" ? s.deaths[0] : s.current}"><div class="decision-heading">${portraitImage(s.players[s.phase === "legacy" ? s.deaths[0] : s.current].portrait ?? 0, true)}<h2>${s.phase === "legacy" ? `Farewell, ${escape(s.players[s.deaths[0]].name)}.` : `${escape(p.name)}’s turn`}</h2></div>${s.status === "travel" && s.phase !== "legacy" ? playerSupplies() : ""}</div>${s.status === "travel" && p.controller === "computer" ? `<div class="computer-turn-status"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">${computerIcon}</svg>Computer traveller</span>${computerControl()}</div>` : ""}<div class="turn-state-window"><div class="turn-state turn-options" data-ui-key="turn-state" data-phase="${s.phase}">${options}</div></div>${s.status === "travel" && s.phase !== "legacy" ? `<div class="turn-map-preview">${renderJourneyMapPreview(s)}</div>` : ""}</section>`;
+  return `<section class="decision turn-decision" aria-live="polite"><p class="eyebrow">${s.status === "travel" ? `Day ${journeyDay(s)}` : "Journey’s end"}</p><div class="turn-header" data-turn-player="${s.phase === "legacy" ? s.deaths[0] : s.current}"><div class="decision-heading">${portraitImage(s.players[s.phase === "legacy" ? s.deaths[0] : s.current].portrait ?? 0, true)}<h2>${s.phase === "legacy" ? `Farewell, ${escape(s.players[s.deaths[0]].name)}.` : `${escape(p.name)}’s turn`}</h2></div>${s.status === "travel" && s.phase !== "legacy" ? playerSupplies() : ""}</div>${s.status === "travel" && p.controller === "computer" ? `<div class="computer-turn-status"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">${computerIcon}</svg>Computer traveller</span>${computerControl()}</div>` : ""}<div class="turn-state-window"><div class="turn-state turn-options" data-ui-key="turn-state" data-phase="${s.phase}">${options}</div></div>${s.status === "travel" && s.phase !== "legacy" ? `<div class="turn-map-preview">${renderJourneyMapPreview(s)}</div>` : ""}</section>`;
 }
 function reportFor(c: TrailCard) {
   return c.journeyStep ? game.state.trailReports?.[c.journeyStep] : undefined;
@@ -1664,7 +1696,7 @@ function restoreTimelineOwners() {
           current?.alive === false &&
           current.deathDay === undefined
         ) {
-          current.deathDay = previous.turn - 1;
+          current.deathDay = journeyDay(previous) - 1;
           current.deathDate = journeyDate(
             current.deathDay,
             game.state.startDate,
@@ -1934,7 +1966,7 @@ function playerPreviewContent(row: HTMLElement) {
     const remaining = Math.max(0, 50 - s.count);
     const text =
       s.status === "won"
-        ? `The wagon reaches Oregon on ${calendarDate(journeyDate(s.turn - 1, s.startDate))}, after ${s.turn - 1} days on the trail.`
+        ? `The wagon reaches Oregon on ${calendarDate(journeyDate(journeyDay(s) - 1, s.startDate))}, after ${journeyDay(s) - 1} days on the trail.`
         : s.status === "lost"
           ? `The journey ends ${remaining} trail card${remaining === 1 ? "" : "s"} short of Oregon. The valley waits beyond the trail.`
           : `${remaining} trail card${remaining === 1 ? "" : "s"} to go. Beyond the last bend, Oregon City and the Willamette Valley await.`;
@@ -1942,7 +1974,7 @@ function playerPreviewContent(row: HTMLElement) {
   }
   if (row.hasAttribute("data-trail-summary")) {
     const s = game.state;
-    const days = s.turn - 1;
+    const days = journeyDay(s) - 1;
     const conditions = s.hazards.filter((h) => wagonKinds.has(h.kind));
     const scene = journeyPreviewArtwork(s);
     return `<img class="trail-summary-art" src="${scene.src}" alt="${escape(scene.alt)}"><strong class="tooltip-title">The trail so far</strong><p>${calendarDate(journeyDate(days, s.startDate))}<br>${days} day${days === 1 ? "" : "s"} on the trail</p><div class="trail-summary-progress" aria-hidden="true"><span style="width:${s.count * 2}%"></span></div><p>${s.count} of 50 trail cards · ${Math.max(0, 50 - s.count)} to Oregon</p>${s.phase === "river" ? `<p>River crossing pending.</p>` : s.phase === "repair" && s.pending ? `<p>${escape(titles[s.pending])}: repair pending.</p>` : ""}${conditions.map((h) => `<div class="trail-summary-condition"><img src="${calamityArt[h.kind]}" alt=""><span>${escape(conditionDescription(h.kind, h.owner))}</span></div>`).join("")}`;
@@ -2370,7 +2402,7 @@ function trail() {
     const c = report?.card ?? fallback;
     return `<div class="trail-piece ${step === activeStep && s.status === "travel" ? "active-connection" : ""}" data-ui-key="trail-step-${step}" tabindex="0" data-trail-results="${escape(JSON.stringify([timelineDescription(report, c)]))}" ${report?.playedBy !== undefined ? `data-trail-player="${report.playedBy}"` : ""} aria-label="Trail card ${step}${step === activeStep ? ", active connection" : ""}">${c ? card(c, reportArtwork(report, c), ["town", "fort"].includes(c.type) ? settlementStubs(timelineCardAt(step - 1), timelineCardAt(step + 1), step === 1) : "") : `<div class="earlier-trail"><img src="${art.trail}" alt="Earlier stretch of trail"></div>`}${trailPlayerBadge(report)}<small>${escape(trailReportTitle(report, c))}</small>${trailOutcomes(report ? [report] : [])}</div>`;
   }).join("");
-  return `<section class="trail-area" aria-label="Journey trail"><div class="section-line"><h2>The trail so far</h2><button type="button" class="trail-compact-date" data-trail-summary aria-label="Trail summary for ${calendarDate(journeyDate(s.turn - 1, s.startDate))}"><time datetime="${journeyDate(s.turn - 1, s.startDate)}">${calendarDate(journeyDate(s.turn - 1, s.startDate))}</time></button><span class="journey-calendar">${calendarDate(journeyDate(s.turn - 1, s.startDate))} · ${s.turn - 1} day${s.turn === 2 ? "" : "s"} on the trail</span><button class="trail-return" data-action="trail-end" aria-label="Back to end of trail" title="Back to end of trail" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12h12m-5-5 5 5-5 5M20 5v14"/></svg></button></div><div class="map-track" data-ui-static role="progressbar" aria-label="Journey progress" aria-valuemin="0" aria-valuemax="50" aria-valuenow="${s.count}"><span style="width:${s.count * 2}%"><button type="button" class="progress-wagon" data-trail-summary aria-label="Show trail summary"><img src="${art.progressWagon}" alt=""></button></span></div><div class="trail-body"><div class="trail-route"><div class="trail-strip"><div class="trail-start" data-ui-key="trail-start" tabindex="0" data-trail-results="${escape(JSON.stringify(["Your journey begins in Independence, Missouri. The wagon is packed, the kettle is rattling, and Oregon waits at the far end of fifty trail cards."]))}" aria-label="Journey starts in Independence, Missouri"><div class="start-art"><img src="${art.independence}" alt="A wagon departing the frontier town of Independence"><span class="start-badge">START</span></div><strong>Independence</strong><small>Missouri</small></div>${entries}<div class="trail-marker ${s.status === "won" ? "arrived" : ""}" data-ui-key="trail-finish" data-trail-finish tabindex="0" style="--finish-progress:${s.count / 50};--finish-dots:${Math.ceil((50 - s.count) / 5)}" aria-label="${s.status === "won" ? "Arrived in Oregon" : "Destination: Oregon"}"><div class="finish-destination"><div class="finish-art"><img src="${art.landscape}" alt="Quiet hills and a wagon at the journey’s destination"><span class="finish-badge"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 14V2m0 0h9l-2 3 2 3H3"/></svg>${s.status === "won" ? "ARRIVED" : "FINISH"}</span></div><strong>Oregon</strong><small>Willamette Valley</small></div></div></div></div>${wagonState()}</div><button type="button" class="top-expand-tab" data-action="expand-top" aria-label="Expand top section" title="Expand top section"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button></section>`;
+  return `<section class="trail-area" aria-label="Journey trail"><div class="section-line"><h2>The trail so far</h2><button type="button" class="trail-compact-date" data-trail-summary aria-label="Trail summary for ${calendarDate(journeyDate(journeyDay(s) - 1, s.startDate))}"><time datetime="${journeyDate(journeyDay(s) - 1, s.startDate)}">${calendarDate(journeyDate(journeyDay(s) - 1, s.startDate))}</time></button><span class="journey-calendar">${calendarDate(journeyDate(journeyDay(s) - 1, s.startDate))} · ${journeyDay(s) - 1} day${journeyDay(s) === 2 ? "" : "s"} on the trail</span><button class="trail-return" data-action="trail-end" aria-label="Back to end of trail" title="Back to end of trail" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12h12m-5-5 5 5-5 5M20 5v14"/></svg></button></div><div class="map-track" data-ui-static role="progressbar" aria-label="Journey progress" aria-valuemin="0" aria-valuemax="50" aria-valuenow="${s.count}"><span style="width:${s.count * 2}%"><button type="button" class="progress-wagon" data-trail-summary aria-label="Show trail summary"><img src="${art.progressWagon}" alt=""></button></span></div><div class="trail-body"><div class="trail-route"><div class="trail-strip"><div class="trail-start" data-ui-key="trail-start" tabindex="0" data-trail-results="${escape(JSON.stringify(["Your journey begins in Independence, Missouri. The wagon is packed, the kettle is rattling, and Oregon waits at the far end of fifty trail cards."]))}" aria-label="Journey starts in Independence, Missouri"><div class="start-art"><img src="${art.independence}" alt="A wagon departing the frontier town of Independence"><span class="start-badge">START</span></div><strong>Independence</strong><small>Missouri</small></div>${entries}<div class="trail-marker ${s.status === "won" ? "arrived" : ""}" data-ui-key="trail-finish" data-trail-finish tabindex="0" style="--finish-progress:${s.count / 50};--finish-dots:${Math.ceil((50 - s.count) / 5)}" aria-label="${s.status === "won" ? "Arrived in Oregon" : "Destination: Oregon"}"><div class="finish-destination"><div class="finish-art"><img src="${art.landscape}" alt="Quiet hills and a wagon at the journey’s destination"><span class="finish-badge"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 14V2m0 0h9l-2 3 2 3H3"/></svg>${s.status === "won" ? "ARRIVED" : "FINISH"}</span></div><strong>Oregon</strong><small>Willamette Valley</small></div></div></div></div>${wagonState()}</div><button type="button" class="top-expand-tab" data-action="expand-top" aria-label="Expand top section" title="Expand top section"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button></section>`;
 }
 const outcomeNames: Record<Outcome, string> = {
   won: "Reached Oregon",
@@ -2406,7 +2438,7 @@ function simulationScreen() {
         ? "Oregon. Against the odds."
         : "Well. The prairie won."
       : "The wagon is taking a breather.";
-  return `<header><div><p class="eyebrow">The unattended expedition</p><h1>Journey <i>simulation</i></h1></div><div class="header-actions">${navigationIcons()}</div></header><main class="simulation-screen decision" data-simulation-status="${simulationRunning ? "running" : finished ? "complete" : "stopped"}"><img class="simulation-art" src="${finished ? (won ? art.victory : art.defeat) : art.landscape}" alt="${finished ? (won ? "The wagon has reached Oregon" : "The trail has fallen silent") : "A wagon setting out across the prairie"}"><div class="simulation-copy"><span class="journey-mode-tag">Simulated journey</span><h2 tabindex="-1">${title}</h2><p class="simulation-message" role="status">${escape(simulationRunning ? s.note : simulationError || s.note)}</p><div class="simulation-progress" role="progressbar" aria-label="Journey progress" aria-valuenow="${s.count}" aria-valuemin="0" aria-valuemax="50"><span style="width:${s.count * 2}%"></span></div><div class="simulation-totals"><span><strong>${s.count}/50</strong>trail cards</span><span><strong>${Math.max(0, s.turn - 1)}</strong>days on the trail</span><span><strong>${living}/${s.players.length}</strong>travellers alive</span></div>${!simulationRunning ? `<div class="simulation-party">${s.players.map((p, i) => `<div>${p.alive ? portraitImage(p.portrait ?? i) : `<img src="${art.tombstoneIcon}" alt="Gravestone">`}<span><strong>${escape(p.name)}</strong><small>${p.alive ? "Still standing" : escape(p.deathCause ?? "Lost on the trail")}</small></span></div>`).join("")}</div>${finished ? renderJourneyMapPreview(s) : `<button data-action="simulation-resume">Continue simulation →</button>`}<div class="simulation-actions">${button("journeys", "Your journeys")}${button("new", "Another journey →")}</div>` : `<small class="simulation-running-note">${s.simulationActions ?? 0} decisions · No steering required</small>`}</div></main>${siteCredit()}`;
+  return `<header><div><p class="eyebrow">The unattended expedition</p><h1>Journey <i>simulation</i></h1></div><div class="header-actions">${navigationIcons()}</div></header><main class="simulation-screen decision" data-simulation-status="${simulationRunning ? "running" : finished ? "complete" : "stopped"}"><img class="simulation-art" src="${finished ? (won ? art.victory : art.defeat) : art.landscape}" alt="${finished ? (won ? "The wagon has reached Oregon" : "The trail has fallen silent") : "A wagon setting out across the prairie"}"><div class="simulation-copy"><span class="journey-mode-tag">Simulated journey</span><h2 tabindex="-1">${title}</h2><p class="simulation-message" role="status">${escape(simulationRunning ? s.note : simulationError || s.note)}</p><div class="simulation-progress" role="progressbar" aria-label="Journey progress" aria-valuenow="${s.count}" aria-valuemin="0" aria-valuemax="50"><span style="width:${s.count * 2}%"></span></div><div class="simulation-totals"><span><strong>${s.count}/50</strong>trail cards</span><span><strong>${Math.max(0, journeyDay(s) - 1)}</strong>days on the trail</span><span><strong>${living}/${s.players.length}</strong>travellers alive</span></div>${!simulationRunning ? `<div class="simulation-party">${s.players.map((p, i) => `<div>${p.alive ? portraitImage(p.portrait ?? i) : `<img src="${art.tombstoneIcon}" alt="Gravestone">`}<span><strong>${escape(p.name)}</strong><small>${p.alive ? "Still standing" : escape(p.deathCause ?? "Lost on the trail")}</small></span></div>`).join("")}</div>${finished ? renderJourneyMapPreview(s) : `<button data-action="simulation-resume">Continue simulation →</button>`}<div class="simulation-actions">${button("journeys", "Your journeys")}${button("new", "Another journey →")}</div>` : `<small class="simulation-running-note">${s.simulationActions ?? 0} decisions · No steering required</small>`}</div></main>${siteCredit()}`;
 }
 async function startSimulation() {
   if (!setup || party.some((p) => !p.name.trim())) {
@@ -2571,7 +2603,7 @@ function journeysScreen() {
                   year: "numeric",
                 })
               : "Saved journey";
-            const state = raw ? replayGame(raw) : undefined;
+            const state = raw ? calendarReplay(raw).state : undefined;
             const scene = state
               ? journeyPreviewArtwork(state)
               : { src: art.landscape, alt: "A wagon on the prairie" };
@@ -2590,7 +2622,7 @@ function loadStatisticsData(mode: JourneyModeFilter = "all") {
     statisticsSkipped = 0;
     const records = (history?.archive.games ?? []).flatMap((record) => {
       try {
-        return [{ record, state: replayGame(record) }];
+        return [{ record, state: calendarReplay(record).state }];
       } catch {
         statisticsSkipped++;
         return [];
@@ -2635,7 +2667,7 @@ function journeyMapScreen() {
     (r) => r.id === selectedJourneyMap,
   );
   if (!record) return statisticsScreen();
-  const state = replayGame(record);
+  const state = calendarReplay(record).state;
   const number = history!.archive.games.indexOf(record) + 1;
   return `<main class="journey-atlas-view" data-ui-key="atlas-${escape(record.id)}"><header class="atlas-toolbar"><button data-map-back>← ${mapReturnView === "journey" ? "Back to journey" : "Statistics"}</button><div><h1>Journey ${number}</h1>${record.simulated ? '<span class="journey-mode-tag">Simulated</span>' : ""}<span class="stats-outcome-tag stats-tag-${record.outcome}">${outcomeNames[record.outcome]}</span></div><span class="atlas-route-label">Independence → Oregon City</span><button data-open-journey="${escape(record.id)}">${state.status === "travel" ? "Continue journey" : "Final result"} →</button></header>${!record.completeFromStart ? '<p class="map-partial">Some earlier turn details were not recorded.</p>' : ""}${renderJourneyMap(state, record)}</main>`;
 }
@@ -2971,7 +3003,7 @@ app.addEventListener("click", async (event) => {
           (record) => record.id === opening,
         );
         if (!record) throw new Error("This journey is unavailable.");
-        const state = readSave(JSON.stringify(replayGame(record)));
+        const state = readSave(JSON.stringify(calendarReplay(record).state));
         if (!state)
           throw new Error("This journey’s saved state cannot be opened.");
         history!.select(opening);
@@ -3891,7 +3923,7 @@ async function revealJourneyEnd() {
   const won = s.status === "won";
   const title = won ? "Oregon. At long last." : "The trail falls silent.";
   const survivors = s.players.filter((p) => p.alive);
-  const days = s.turn - 1;
+  const days = journeyDay(s) - 1;
   const description = won
     ? "The wheels can rest. You made it to the Willamette Valley—put the kettle on, and let tomorrow wait. One survivor brings a victory home for everyone."
     : survivors.length

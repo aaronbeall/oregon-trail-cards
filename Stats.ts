@@ -67,7 +67,7 @@ export function gameStatistics(
       startedAt: record.startedAt,
       outcome: record.outcome === "abandoned" ? "abandoned" : state.status,
       distance: Math.min(50, Math.max(0, state.count)),
-      days: Math.max(0, state.turn - 1),
+      days: Math.max(0, (state.day ?? state.turn) - 1),
       players: state.players,
       survivors: state.players.filter((player) => player.alive).length,
       partial: !record.completeFromStart,

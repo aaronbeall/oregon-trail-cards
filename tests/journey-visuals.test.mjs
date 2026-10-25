@@ -32,6 +32,15 @@ const {
   eventRouteProgress,
   importantMapSteps,
   mapActionTone,
+  routePath,
+  oregonRoute,
+  mapPlaybackTimeline,
+  mapPlaybackClock,
+  PLAYBACK_TOAST_GAP,
+  playbackHold,
+  mapTooltipPlacement,
+  mapActionPresentation,
+  groupSupplyActions,
 } = await import(
   compile("JourneyVisuals", {
     TrailCard: trail,
@@ -46,6 +55,116 @@ function fresh() {
   g.reset(["Ada", "Bea", "Cy"]);
   return g.state;
 }
+test("successive supply contributions become one event with all supplies and the final result", () => {
+  const base = {
+    turn: 4,
+    day: 3,
+    player: 0,
+    type: "cure",
+    action: "Gave Clean water to Bea",
+    context: "Typhoid",
+    text: ["Typhoid still needs treatment."],
+    rolls: [],
+    supplies: [{ player: 0, kind: "water", delta: -1 }],
+  };
+  const medicine = {
+    ...base,
+    action: "Gave Medicine to Bea",
+    text: ["Bea recovered."],
+    supplies: [{ player: 0, kind: "medicine", delta: -1 }],
+  };
+  const original = structuredClone([base, medicine]);
+  const grouped = groupSupplyActions([base, medicine]);
+  assert.equal(grouped.length, 1);
+  assert.equal(grouped[0].action, "Gave Clean water and Medicine to Bea");
+  assert.deepEqual(grouped[0].text, ["Bea recovered."]);
+  assert.equal(grouped[0].supplies.length, 2);
+  assert.deepEqual([base, medicine], original);
+  const art = new Proxy({}, { get: (_, key) => `${String(key)}.webp` });
+  const presentation = mapActionPresentation(grouped[0], fresh(), {
+    art,
+    calamities: {},
+    portraits: [],
+  });
+  assert.equal(
+    (presentation.action.match(/supply-change-bubble/g) ?? []).length,
+    2,
+  );
+  assert.match(presentation.action, / and /);
+  for (const changed of [
+    { player: 1 },
+    { turn: 5 },
+    { day: 4 },
+    { action: "Gave Medicine to Cy" },
+    { context: "Cholera" },
+  ]) {
+    assert.equal(
+      groupSupplyActions([base, { ...medicine, ...changed }]).length,
+      2,
+    );
+  }
+  const packed = {
+    ...base,
+    type: "take",
+    action: "Packed Food",
+    context: undefined,
+    text: [],
+    supplies: [{ player: 0, kind: "food", delta: 1 }],
+  };
+  const packs = groupSupplyActions([
+    packed,
+    packed,
+    {
+      ...packed,
+      action: "Packed Medicine",
+      supplies: [{ player: 0, kind: "medicine", delta: 1 }],
+    },
+  ]);
+  assert.equal(packs.length, 1);
+  assert.equal(packs[0].action, "Packed Food and Medicine");
+  assert.equal(packs[0].supplies[0].delta, 2);
+  assert.equal(
+    groupSupplyActions([
+      base,
+      { ...base, type: "draw", supplies: [] },
+      medicine,
+    ]).length,
+    3,
+  );
+});
+test("personal event artwork identifies the affected traveller, not the acting player", () => {
+  const s = fresh();
+  s.count = 3;
+  s.trailReports = {
+    1: { title: "Bea has Measles", calamity: "measles", owner: 1, playedBy: 0 },
+    2: { title: "Broken wheel", calamity: "wheel", owner: 0, playedBy: 0 },
+    3: { title: "Cy has Typhoid", calamity: "typhoid", playedBy: 2 },
+  };
+  const art = new Proxy({}, { get: (_, key) => `${String(key)}.webp` });
+  const html = journeyMap(s, {
+    art,
+    calamities: {
+      measles: "measles.webp",
+      wheel: "wheel.webp",
+      typhoid: "typhoid.webp",
+    },
+    portraits: ["Ada-portrait", "Bea-portrait", "Cy-portrait"],
+  });
+  const cues = JSON.parse(
+    html.match(
+      /<script type="application\/json" data-map-cues>([^]*?)<\/script>/,
+    )[1],
+  );
+  assert.match(
+    cues[1].content,
+    /playback-event-subject[^]*aria-label="Bea"[^]*Bea-portrait/,
+  );
+  assert.match(cues[1].content, /src="measles.webp"/);
+  assert.doesNotMatch(cues[1].content, /Ada-portrait/);
+  assert.doesNotMatch(cues[2].content, /playback-event-subject/);
+  assert.match(cues[3].content, /Cy-portrait/);
+  assert.doesNotMatch(cues[0].content, /playback-event-subject/);
+});
 test("Sankey cohorts conserve every journey and keep progress/outcome groups distinct", () => {
   const games = [
     { distance: 0, outcome: "lost" },
@@ -412,7 +531,7 @@ test("each event has a trail anchor and detail connectors follow the route norma
   assert.equal((html.match(/data-map-dot=/g) ?? []).length, 11);
   const lines = [
     ...html.matchAll(
-      /class="map-event-connector" x1="([^"]+)" y1="([^"]+)" x2="([^"]+)" y2="([^"]+)"/g,
+      /class="map-event-connector"[^>]* x1="([^"]+)" y1="([^"]+)" x2="([^"]+)" y2="([^"]+)"/g,
     ),
   ];
   assert.ok(lines.length >= 3);
@@ -559,4 +678,445 @@ test("turn 8 treatment follows turns 6 and 7 instead of rewriting the turn 5 cal
   assert.ok(events.every((e, i) => !i || e.progress > events[i - 1].progress));
   assert.equal(events.at(-1).progress, g.state.count / 50);
   assert.deepEqual(h.archive, before);
+});
+
+test("curved route passes through historic waypoints and uses the same geometry for anchors", () => {
+  assert.equal((routePath.match(/C/g) ?? []).length, oregonRoute.length - 1);
+  const sampled = Array.from({ length: 10001 }, (_, i) =>
+    routePoint(i / 10000),
+  );
+  for (const waypoint of oregonRoute) {
+    assert.ok(
+      Math.min(
+        ...sampled.map((p) => Math.hypot(p.x - waypoint.x, p.y - waypoint.y)),
+      ) < 0.3,
+    );
+  }
+  assert.deepEqual(routePoint(0), oregonRoute[0]);
+  assert.deepEqual(routePoint(1), oregonRoute.at(-1));
+  const s = fresh();
+  s.count = 3;
+  const art = new Proxy({}, { get: (_, key) => `${String(key)}.webp` });
+  const html = journeyMap(s, { art, calamities: {}, portraits: [] });
+  assert.ok(
+    html.indexOf('<g class="map-connectors">') <
+      html.indexOf('<g class="map-dots">'),
+  );
+  assert.ok(html.includes("data-map-play"));
+});
+
+test("tooltip placement clears the hovered image and favors the side away from the trail", () => {
+  for (const screen of [
+    { width: 1100, height: 800 },
+    { width: 390, height: 600 },
+  ]) {
+    for (const y of [35, 280, screen.height - 50]) {
+      const anchor = {
+        left: screen.width / 2 - 20,
+        right: screen.width / 2 + 20,
+        top: y,
+        bottom: y + 30,
+      };
+      const width = Math.min(400, screen.width - 24);
+      const p = mapTooltipPlacement(anchor, width, 800, screen);
+      assert.ok(
+        p.top + p.height <= anchor.top ||
+          p.top >= anchor.bottom ||
+          p.left + width <= anchor.left ||
+          p.left >= anchor.right,
+      );
+      assert.ok(p.left >= 12 && p.left + width <= screen.width - 12);
+      assert.ok(p.top >= 12 && p.top + p.height <= screen.height - 12);
+    }
+  }
+  const anchor = { left: 500, right: 540, top: 350, bottom: 390 };
+  const p = mapTooltipPlacement(
+    anchor,
+    300,
+    200,
+    { width: 1100, height: 800 },
+    Array.from({ length: 30 }, (_, i) => ({ x: 400 + i * 8, y: 450 })),
+  );
+  assert.ok(p.top + p.height < anchor.top);
+});
+
+test("playback keeps stationary actions at one stop and gives longer stays proportionate pauses", () => {
+  const cues = [
+    { step: 0, progress: 0, day: 1, hold: 1100 },
+    { step: 1, progress: 0.1, day: 2, hold: 2400 },
+    { step: 1, progress: 0.1, day: 5, hold: 2400 },
+    { step: 2, progress: 0.2, day: 6, hold: 1100 },
+  ];
+  const before = structuredClone(cues);
+  const t = mapPlaybackTimeline(cues);
+  assert.equal(t[2].arrive, t[2].start);
+  assert.ok(t[1].end - t[1].arrive > t[0].end - t[0].arrive);
+  assert.ok(t.every((cue, i) => !i || cue.start === t[i - 1].end));
+  assert.deepEqual(cues, before);
+});
+
+test("map action graphics belong to the matching action words and each supply delta appears once", () => {
+  const s = fresh();
+  const art = new Proxy({}, { get: (_, key) => `${String(key)}.webp` });
+  const assets = { art, calamities: {}, portraits: [] };
+  const action = {
+    turn: 1,
+    player: 0,
+    type: "cure",
+    action: "Gave Medicine to Bea",
+    rolls: [],
+    text: ["Bea recovered."],
+    supplies: [{ player: 0, kind: "medicine", delta: -1 }],
+  };
+  const cure = mapActionPresentation(action, s, assets);
+  assert.match(cure.action, /^gave <span class="map-inline-supply">/);
+  assert.match(cure.action, / to Bea$/);
+  assert.equal((cure.action.match(/supply-change-bubble/g) ?? []).length, 1);
+  assert.equal(cure.results.join(""), "Bea recovered.");
+  assert.deepEqual(
+    mapActionPresentation(
+      { ...action, text: ["Ada offered medicine."] },
+      s,
+      assets,
+    ).results,
+    [],
+  );
+  assert.deepEqual(
+    mapActionPresentation(
+      { ...action, text: ["Ada offered medicine. Bea recovered."] },
+      s,
+      assets,
+    ).results,
+    ["Bea recovered."],
+  );
+  const roll = mapActionPresentation(
+    {
+      ...action,
+      type: "roll",
+      action: "Attempted the crossing",
+      rolls: [1],
+      text: ["Ada lost food in the river."],
+      supplies: [{ player: 0, kind: "food", delta: -1 }],
+    },
+    s,
+    assets,
+  );
+  assert.match(
+    roll.action,
+    /rolled <span class="map-event-visual map-inline-dice">/,
+  );
+  assert.ok(!roll.action.includes("supply-change-bubble"));
+  assert.match(roll.results[0], /Ada lost <span class="map-inline-supply">/);
+  const trade = mapActionPresentation(
+    {
+      ...action,
+      type: "trade",
+      action: "Exchanged supplies",
+      text: [],
+      supplies: [
+        { player: 0, kind: "food", delta: -1 },
+        { player: 1, kind: "food", delta: 1 },
+      ],
+    },
+    s,
+    assets,
+  );
+  assert.equal((trade.action.match(/supply-change-bubble/g) ?? []).length, 2);
+  assert.match(trade.action, /traded/);
+  assert.match(trade.action, /gained/);
+  const play = mapActionPresentation(
+    {
+      ...action,
+      type: "play",
+      action: "Played River crossing",
+      card: { type: "river" },
+      supplies: [],
+      text: [],
+    },
+    s,
+    assets,
+  );
+  assert.match(play.action, /^played <span class="map-inline-card">/);
+});
+
+test("map point titles prefer named settlements and specific calamities, including older recorded turns", async () => {
+  const { GameHistory } = await import(historySource);
+  const g = new TrailGame(() => 0.25);
+  g.reset(["Ada", "Bea", "Cy"]);
+  g.state.players[0].hand = [
+    { id: 9000, type: "fort", left: 1, right: 1, rotated: false },
+  ];
+  const history = new GameHistory(
+    { getItem: () => null, setItem() {} },
+    () => "2026-10-20",
+    () => "names",
+  );
+  history.capture(g.state, { type: "start" });
+  assert.ok(g.play(0));
+  history.capture(g.state, { type: "play", args: { play: "0" } });
+  const state = structuredClone(g.state);
+  state.run[0].locationName = "Fort Cottonwood";
+  state.trailReports = {
+    1: {
+      title: "Fort",
+      card: { ...state.run[0] },
+      losses: 0,
+      gains: {},
+      deaths: [],
+    },
+  };
+  const before = structuredClone(history.archive);
+  const event = journeyMapEvents(state, history.archive.games[0])[1];
+  assert.equal(event.title, "Fort Cottonwood");
+  assert.equal(event.actions[0].action, "Played Fort Cottonwood");
+  assert.equal(event.actions[0].card.locationName, "Fort Cottonwood");
+  const art = new Proxy({}, { get: (_, key) => `${String(key)}.webp` });
+  const map = journeyMap(
+    state,
+    { art, calamities: {}, portraits: [] },
+    history.archive.games[0],
+  );
+  const cues = JSON.parse(
+    map.match(
+      /<script type="application\/json" data-map-cues>([^]*?)<\/script>/,
+    )[1],
+  );
+  const stop = cues.find((c) => c.step === 1);
+  assert.ok(
+    stop.toasts.some(
+      (t) => t.html.includes("played") && t.html.includes("Fort Cottonwood"),
+    ),
+  );
+  assert.ok(!stop.content.includes("played"));
+  assert.equal(journeyMapEvents(state)[1].title, "Fort Cottonwood");
+  state.run[0].type = "town";
+  state.run[0].locationName = "Sparrow Ridge";
+  state.trailReports[1] = {
+    ...state.trailReports[1],
+    title: "Town",
+    card: { ...state.run[0] },
+  };
+  assert.equal(journeyMapEvents(state)[1].title, "Sparrow Ridge");
+  state.trailReports[1] = {
+    ...state.trailReports[1],
+    title: "Calamity",
+    card: { ...state.run[0], type: "calamity" },
+    calamity: "typhoid",
+  };
+  assert.equal(journeyMapEvents(state)[1].title, "Typhoid");
+  assert.deepEqual(history.archive, before);
+});
+
+test("playback travels through clear paths and pauses only for stops and stationary actions", () => {
+  const event = {
+    step: 1,
+    title: "Quiet trail",
+    kind: "trail",
+    card: { type: "trail" },
+    actions: [],
+  };
+  const action = {
+    turn: 1,
+    player: 0,
+    type: "play",
+    action: "Played Quiet trail",
+    rolls: [],
+    text: [],
+    supplies: [],
+  };
+  assert.equal(playbackHold(event, action), 0);
+  assert.equal(
+    playbackHold(
+      { ...event, kind: "typhoid", card: { type: "calamity" } },
+      action,
+    ),
+    0,
+  );
+  assert.ok(
+    playbackHold({ ...event, kind: "town", card: { type: "town" } }, action) >
+      0,
+  );
+  const river = playbackHold(
+    { ...event, kind: "river", card: { type: "river" } },
+    action,
+  );
+  const broken = playbackHold(
+    { ...event, kind: "wheel", card: { type: "calamity" } },
+    action,
+  );
+  assert.ok(river > 0 && river < broken);
+  assert.ok(playbackHold(event, { ...action, type: "draw" }) > 0);
+  const timeline = mapPlaybackTimeline([
+    { step: 0, progress: 0, day: 1, hold: 0 },
+    { step: 1, progress: 0.1, day: 2, hold: 0 },
+    { step: 2, progress: 0.2, day: 3, hold: 0 },
+  ]);
+  assert.ok(timeline.every((cue) => cue.end === cue.arrive));
+  assert.equal(timeline[2].start, timeline[1].arrive);
+  const s = fresh();
+  s.count = 3;
+  const art = new Proxy({}, { get: (_, key) => `${String(key)}.webp` });
+  const html = journeyMap(s, { art, calamities: {}, portraits: [] });
+  const cues = JSON.parse(
+    html.match(
+      /<script type="application\/json" data-map-cues>([^]*?)<\/script>/,
+    )[1],
+  );
+  assert.ok(
+    cues.every(
+      (c) =>
+        !c.content.includes("map-turn-history") &&
+        !c.content.includes("map-timeline-entry"),
+    ),
+  );
+  assert.ok(cues.every((c) => c.content.includes("map-playback-event")));
+  assert.ok(html.includes('src="progressWagon.webp" alt="The wagon"'));
+});
+
+test("playback clock is monotonic across actions, days, seeking and completion", () => {
+  const timeline = mapPlaybackTimeline([
+    { step: 0, progress: 0, day: 1, hold: 800 },
+    { step: 1, progress: 0.1, day: 1, hold: 1000 },
+    { step: 1, progress: 0.1, day: 2, hold: 2000 },
+    { step: 2, progress: 0.2, day: 4, hold: 0 },
+  ]);
+  assert.ok(timeline.at(-1).end > 20000);
+  let last = 0;
+  for (let elapsed = 0; elapsed <= timeline.at(-1).end; elapsed += 100) {
+    const clock = mapPlaybackClock(timeline, elapsed);
+    assert.ok(clock.minute >= last);
+    assert.match(clock.time, /^\d{1,2}:\d{2} (am|pm)$/);
+    last = clock.minute;
+  }
+  assert.equal(mapPlaybackClock(timeline, timeline.at(-1).end).day, 4);
+  assert.equal(mapPlaybackClock(timeline, 0).time, "8:00 am");
+  for (const cue of timeline.filter((c) => c.hold > 0))
+    assert.equal(mapPlaybackClock(timeline, cue.arrive).day, cue.day);
+  assert.equal(mapPlaybackClock([], 0).time, "8:00 am");
+});
+
+test("playback separates title/art state cards from action toasts and chooses matching marker art", () => {
+  const s = fresh();
+  s.count = 3;
+  s.status = "lost";
+  const card = (id, type, locationName) => ({
+    id,
+    type,
+    locationName,
+    left: 1,
+    right: 1,
+    rotated: false,
+  });
+  s.trailReports = {
+    1: { title: "Fort", card: card(1, "fort", "Fort Sparrow") },
+    2: { title: "Town", card: card(2, "town", "Sparrow Ridge") },
+    3: { title: "Broken wheel", calamity: "wheel", card: card(3, "calamity") },
+  };
+  const art = new Proxy({}, { get: (_, key) => `${String(key)}.webp` });
+  const html = journeyMap(s, { art, calamities: {}, portraits: [] });
+  const cues = JSON.parse(
+    html.match(
+      /<script type="application\/json" data-map-cues>([^]*?)<\/script>/,
+    )[1],
+  );
+  assert.equal(cues.find((c) => c.step === 1).marker, "mapFort.webp");
+  assert.equal(cues.find((c) => c.step === 2).marker, "mapTown.webp");
+  assert.equal(cues.find((c) => c.step === 3).marker, "mapStopped.webp");
+  assert.equal(cues.at(-1).marker, "mapLost.webp");
+  for (const cue of cues) {
+    assert.ok(cue.content.includes("<h4>"));
+    assert.ok(cue.content.includes("playback-event-art"));
+    assert.ok(
+      !cue.content.includes("map-event-heading") &&
+        !cue.content.includes("<p>"),
+    );
+  }
+  assert.ok(html.includes("data-map-seek"));
+  assert.ok(html.includes("data-map-duration"));
+});
+
+test("river attempts group under one map date but retain distinct recorded turns", async () => {
+  const { GameHistory, replayGame } = await import(historySource);
+  const g = new TrailGame(() => 0.25);
+  g.reset(["Ada", "Bea", "Cy"]);
+  g.state.players[0].hand = [
+    { id: 9000, type: "river", left: 1, right: 1, rotated: false },
+  ];
+  const h = new GameHistory(
+    { getItem: () => null, setItem() {} },
+    () => "2026-10-25",
+    () => "river-day",
+  );
+  h.capture(g.state, { type: "start" });
+  assert.ok(g.play(0));
+  h.capture(g.state, { type: "play", args: { play: "0" } });
+  for (const random of [0.4, 0.7, 0.3]) {
+    g.random = () => random;
+    assert.ok(g.cross());
+    h.capture(g.state, { type: "roll", rolls: [g.state.die] });
+  }
+  assert.deepEqual(
+    h.archive.games[0].events.map((e) => e.day),
+    [1, 1, 1, 1],
+  );
+  assert.deepEqual(replayGame(h.archive.games[0]), g.state);
+  const events = journeyMapEvents(g.state, h.archive.games[0]);
+  const crossing = events.find((e) => e.card?.type === "river");
+  assert.deepEqual(
+    crossing.actions.map((a) => a.day),
+    [1, 1, 1, 1],
+  );
+  assert.deepEqual(
+    crossing.actions.map((a) => a.turn),
+    [1, 1, 2, 3],
+  );
+  const art = new Proxy({}, { get: (_, key) => `${String(key)}.webp` });
+  const html = journeyMap(
+    g.state,
+    { art, calamities: {}, portraits: [] },
+    h.archive.games[0],
+  );
+  assert.ok(html.includes("map-stop-river"));
+  assert.ok(html.includes("River crossing"));
+  assert.ok(html.includes("Calamity"));
+  assert.ok(!html.includes("Event connection"));
+  const cues = JSON.parse(
+    html.match(
+      /<script type="application\/json" data-map-cues>([^]*?)<\/script>/,
+    )[1],
+  );
+  assert.ok(
+    cues.filter((c) => c.step === crossing.step).every((c) => c.day === 1),
+  );
+  const timeline = mapPlaybackTimeline(cues);
+  const times = timeline.flatMap((c) => c.toastTimes);
+  assert.ok(
+    times.every((at, i) => !i || at - times[i - 1] >= PLAYBACK_TOAST_GAP),
+  );
+  const many = mapPlaybackTimeline(
+    Array.from({ length: 200 }, (_, i) => ({
+      step: 1,
+      progress: 0.1,
+      day: 1,
+      hold: 850,
+      content: "",
+      toasts: [{ html: "a", label: "a", tone: "neutral" }],
+    })),
+  );
+  assert.equal(mapPlaybackClock(many, many.at(-1).end).day, 1);
+});
+
+test("multiple toast recipients at one stop receive separate presentation times", () => {
+  const toast = { html: "a", label: "a", tone: "neutral" };
+  const timeline = mapPlaybackTimeline([
+    { step: 0, progress: 0, day: 1, hold: 0, toasts: [toast, toast, toast] },
+    { step: 1, progress: 0.01, day: 1, hold: 0, toasts: [toast] },
+    { step: 2, progress: 0.01, day: 1, hold: 2800, toasts: [] },
+  ]);
+  const times = timeline.flatMap((c) => c.toastTimes);
+  assert.equal(times.length, 4);
+  assert.ok(
+    times.every((at, i) => !i || at - times[i - 1] >= PLAYBACK_TOAST_GAP),
+  );
+  assert.ok(timeline.at(-1).end > times.at(-1));
 });

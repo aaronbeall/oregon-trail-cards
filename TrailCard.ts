@@ -182,6 +182,7 @@ export type Journey = {
   players: Player[];
   current: number;
   turn: number;
+  day?: number;
   deck: TrailCard[];
   calamities: Calamity[];
   discarded: Calamity[];
@@ -206,6 +207,10 @@ export type Journey = {
   trailReports?: Record<number, TrailReport>;
   lastSupplyLoss?: SupplyLoss;
 };
+/** Narrative calendar; older saved games retain their original turn-based dates. */
+export function journeyDay(state: Pick<Journey, "day" | "turn">) {
+  return state.day ?? state.turn;
+}
 /** Count actual player turns, including this turn, until this condition expires. */
 export function hazardDeadline(s: Journey, hazard: Hazard) {
   if (hazard.rounds === null || hazard.rounds <= 0) return;
@@ -309,6 +314,7 @@ export class TrailGame {
   ) {
     this.state = saved ?? this.fresh(["Juniper", "Clementine", "Otis"]);
     this.state.startDate ??= JOURNEY_START_DATE;
+    this.state.day ??= this.state.turn;
     // Older saves stored five-card piles; restore their surviving cards in visit order.
     if (this.state.stacks.length) {
       const earlier = this.state.stacks.flatMap((pile, index) =>
@@ -441,6 +447,7 @@ export class TrailGame {
       players,
       current: 0,
       turn: 1,
+      day: 1,
       deck,
       calamities: this.shuffle(
         (Object.keys(titles) as Calamity[]).flatMap((k) => [k, k]),
@@ -614,7 +621,7 @@ export class TrailGame {
     if (!p.alive) return;
     p.alive = false;
     p.deathCause = cause;
-    p.deathDay = s.turn - 1;
+    p.deathDay = journeyDay(s) - 1;
     p.deathDate = journeyDate(p.deathDay, s.startDate);
     p.epitaph = `Here rests ${p.name}. ${cause}. The prairie remembers.`;
     s.deck.push(...p.hand);
@@ -691,6 +698,9 @@ export class TrailGame {
       }
     }
     s.used = 0;
+    const crossing =
+      s.phase === "river" || (s.phase === "legacy" && s.resume === "river");
+    s.day = journeyDay(s) + (crossing || s.status !== "travel" ? 0 : 1);
     s.turn++;
     if (this.living.length) {
       let next = (ending + 1) % s.players.length;
@@ -702,10 +712,12 @@ export class TrailGame {
   private finishCard() {
     const s = this.state;
     if (s.status !== "travel") return;
+    const arrivalDay = journeyDay(s);
     s.phase = "turn";
     this.endTurn();
     if (s.count === 50 && s.status === "travel") {
       s.status = "won";
+      s.day = arrivalDay;
       s.note =
         "Willamette Valley at last. One survivor means a victory for everyone. Put the kettle on.";
     }
@@ -1033,6 +1045,8 @@ export function readSave(raw: string | null): Journey | undefined {
       s.count > 50 ||
       !Number.isInteger(s.turn) ||
       s.turn < 1 ||
+      (s.day !== undefined &&
+        (!Number.isInteger(s.day) || s.day < 1 || s.day > s.turn)) ||
       typeof s.started !== "boolean" ||
       typeof s.note !== "string"
     )

@@ -118,3 +118,11 @@ test("game type filters apply to every aggregate, not only the ledger", () => {
   assert.equal(empty.games.length, 0);
   assert.equal(empty.victoryRate, null);
 });
+
+test("statistics use the calendar day independently of the turn counter", () => {
+  const sample = journey("won", 50, [true, true]);
+  sample.state.day = 4;
+  sample.state.turn = 20;
+  assert.equal(gameStatistics([sample]).games[0].days, 3);
+  assert.equal(gameStatistics([sample]).averageDays, 3);
+});

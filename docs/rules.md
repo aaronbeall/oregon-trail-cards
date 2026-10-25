@@ -20,21 +20,21 @@ An even roll fords a river. Failed attempts pass to the next survivor without ad
 
 Spacebar-marked Trail cards draw Calamities. The drawer is affected unless the card concerns the entire wagon. A timed round starts with the next living player and ends after the drawer’s next turn, giving the drawer a final opportunity to remedy it. Death removes a player from future turn order.
 
-| Calamity | Printed effect implemented |
-| --- | --- |
+| Calamity                   | Printed effect implemented                                                                                                        |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | Broken axle, tongue, wheel | Roll 4–6 for immediate repair; otherwise one spare part within one round. Trail play stops; missing the deadline loses the party. |
-| Dead oxen | One oxen supply within one round; trail play stops and the missed deadline loses the party. |
-| Bad water | One clean water. A second active card kills the oxen, starting an oxen replacement deadline. |
-| Inadequate grass | Only a Town removes it. A second active card kills the oxen, starting an oxen replacement deadline. |
-| Cholera | Two medicine; a second active card kills the previously afflicted player. |
-| Measles | Miss one turn unless cured with medicine; a second active card kills the previously afflicted player. |
-| Broken arm | Sit out two rounds, then recover. |
-| Extreme cold | Clothes within one round or the afflicted player dies. |
-| Typhoid | Clean water AND medicine within one round or the afflicted player dies. |
-| Starvation | Food within two rounds or the afflicted player dies. |
-| Thief | Lose one supply. |
-| Hunting | Having bullets grants one available Food card; the printed card does not instruct spending the bullets. |
-| Snakebite, Dysentery | Immediate death. |
+| Dead oxen                  | One oxen supply within one round; trail play stops and the missed deadline loses the party.                                       |
+| Bad water                  | One clean water. A second active card kills the oxen, starting an oxen replacement deadline.                                      |
+| Inadequate grass           | Only a Town removes it. A second active card kills the oxen, starting an oxen replacement deadline.                               |
+| Cholera                    | Two medicine; a second active card kills the previously afflicted player.                                                         |
+| Measles                    | Miss one turn unless cured with medicine; a second active card kills the previously afflicted player.                             |
+| Broken arm                 | Sit out two rounds, then recover.                                                                                                 |
+| Extreme cold               | Clothes within one round or the afflicted player dies.                                                                            |
+| Typhoid                    | Clean water AND medicine within one round or the afflicted player dies.                                                           |
+| Starvation                 | Food within two rounds or the afflicted player dies.                                                                              |
+| Thief                      | Lose one supply.                                                                                                                  |
+| Hunting                    | Having bullets grants one available Food card; the printed card does not instruct spending the bullets.                           |
+| Snakebite, Dysentery       | Immediate death.                                                                                                                  |
 
 Supply remedies return supplies to the shop. Partial multi-card remedies remain outstanding. Supply losses are selected automatically from the affected player’s actual supply cards; if their bag is empty, the selection comes from the living party’s supplies. Death allows up to two supplies to be willed to survivors; remaining supplies return to the shop, and the deceased’s Trail cards go to the bottom of the draw pile. Epitaphs can be edited.
 
@@ -49,3 +49,7 @@ The previous solo “16 cards / party spirit / automatic provisions” save form
 The digital trail is continuous: every card connects to the last card played. Five-card piles and milestones are omitted. Earlier physical cards recycle when the deck is empty; immutable visit snapshots keep the complete trail visible.
 
 Supply losses resolve automatically in this digital version: choose a random card from the affected player’s supplies, or from all living companions’ supply cards if their bag is empty. The exact lost supply is revealed before continuing; there is no selection step or second die roll.
+
+## Narrative calendar
+
+The calendar is a digital presentation convention, independent of the printed turn/round rules. All attempts at a single river crossing occur on one calendar day, with simulated time passing between attempts. Crossing successfully starts the next travel day unless the game ends there. Calamity deadlines still count player turns and rounds, even when several turns occur on the same date.

@@ -5,11 +5,12 @@ import {
   label,
   calendarDate,
   journeyDate,
+  journeyDay,
   type Journey,
   type TrailReport,
   type TrailCard,
 } from "./TrailCard";
-import { replayGame, type RecordedGame } from "./History";
+import { replayGame, calendarReplay, type RecordedGame } from "./History";
 import type { JourneySummary, Outcome } from "./Stats";
 import { supplyEmblem } from "./Supplies";
 import { renderJourneyFlow, type FlowMode } from "./Flows";
@@ -46,6 +47,7 @@ export function journeyFlow(
 }
 export type MapAction = {
   turn: number;
+  day?: number;
   player: number;
   action: string;
   type?: string;
@@ -69,6 +71,7 @@ export type MapEvent = {
   card?: TrailCard;
   report?: TrailReport;
   turn?: number;
+  day?: number;
   player?: number;
   actions: MapAction[];
   trailStep?: number;
@@ -89,19 +92,59 @@ const sharedConditions = new Set([
   "water",
   "grass",
 ]);
+function namedMapCard(state: Journey, card?: TrailCard, step?: number) {
+  const recorded =
+    step === undefined ? undefined : state.trailReports?.[step]?.card;
+  card ??= recorded;
+  if (!card || card.locationName || !["town", "fort"].includes(card.type))
+    return card;
+  const known = [
+    recorded,
+    ...Object.values(state.trailReports ?? {}).map((r) => r.card),
+    ...state.run,
+    ...state.stacks.flat(),
+    ...state.deck,
+    ...state.players.flatMap((p) => p.hand),
+  ].find((c) => c?.id === card!.id && c.locationName);
+  return known ? { ...card, locationName: known.locationName } : card;
+}
+function specificMapTitle(
+  state: Journey,
+  card?: TrailCard,
+  report?: TrailReport,
+  step?: number,
+) {
+  const named = namedMapCard(state, card ?? report?.card, step);
+  if (named?.locationName && ["town", "fort"].includes(named.type))
+    return named.locationName;
+  const generic = ["Town", "Fort", "Calamity", "Trail card played"];
+  if (report?.title && !generic.includes(report.title)) return report.title;
+  return report?.calamity
+    ? titles[report.calamity]
+    : named
+      ? label(named)
+      : (report?.title ?? "Earlier trail");
+}
 export function journeyMapEvents(
   state: Journey,
   record?: RecordedGame,
 ): MapEvent[] {
-  const timing = new Map<number, { turn: number; player: number }>();
+  const timing = new Map<
+    number,
+    { turn: number; day: number; player: number }
+  >();
   const actions = new Map<number, MapAction[]>();
   const chronological: RecordedMapAction[] = [];
+  const calendar = record?.initial ? calendarReplay(record) : undefined;
+  let calendarIndex = 0;
   const deaths = new Map<
     number,
-    { step: number; turn: number; player: number }
+    { step: number; turn: number; day: number; player: number }
   >();
   let previous = record?.initial;
   for (const event of record?.events ?? []) {
+    const eventDay =
+      calendar?.eventDays[calendarIndex++] ?? event.day ?? event.turn;
     const count = event.changes.find(
       (c) => c.path.length === 1 && c.path[0] === "count" && "value" in c,
     );
@@ -111,7 +154,11 @@ export function journeyMapEvents(
       "value" in count &&
       typeof count.value === "number"
     )
-      timing.set(count.value, { turn: event.turn, player: event.player });
+      timing.set(count.value, {
+        turn: event.turn,
+        day: eventDay,
+        player: event.player,
+      });
     if (!previous || !record) continue;
     const next = replayGame({ ...record, initial: previous, events: [event] });
     const args = event.action.args ?? {},
@@ -137,6 +184,7 @@ export function journeyMapEvents(
       deaths.set(index, {
         step: cause?.trailStep ?? step,
         turn: event.turn,
+        day: eventDay,
         player: event.player,
       });
     });
@@ -185,7 +233,11 @@ export function journeyMapEvents(
                               ? "Exchanged supplies"
                               : "Willed supplies";
       if (type === "play") {
-        const card = previous.players[event.player]?.hand[Number(args.play)];
+        const card = namedMapCard(
+          state,
+          previous.players[event.player]?.hand[Number(args.play)],
+          next.count,
+        );
         if (card) action = `Played ${label(card)}`;
       }
       const beforeResults = previous.trailReports?.[step]?.results ?? [];
@@ -265,6 +317,7 @@ export function journeyMapEvents(
       const list = actions.get(step) ?? [];
       list.push({
         turn: death?.turn ?? event.turn,
+        day: death?.day ?? eventDay,
         player: death?.player ?? event.player,
         action,
         type,
@@ -273,7 +326,11 @@ export function journeyMapEvents(
           : undefined,
         card:
           type === "play"
-            ? previous.players[event.player]?.hand[Number(args.play)]
+            ? namedMapCard(
+                state,
+                previous.players[event.player]?.hand[Number(args.play)],
+                next.count,
+              )
             : type === "draw"
               ? next.players[event.player].hand.find(
                   (c) =>
@@ -313,21 +370,16 @@ export function journeyMapEvents(
   const events = Array.from({ length: state.count }, (_, i) => {
     const step = i + 1,
       report = state.trailReports?.[step],
-      card = report?.card ?? cards.get(step),
+      card = namedMapCard(state, report?.card ?? cards.get(step), step),
       time = timing.get(step);
     return {
       step,
-      title:
-        report?.title ??
-        (report?.calamity
-          ? titles[report.calamity]
-          : card
-            ? label(card)
-            : "Earlier trail"),
+      title: specificMapTitle(state, card, report, step),
       kind: report?.calamity ?? card?.type ?? "unknown",
       card,
       report,
       turn: time?.turn,
+      day: time?.day,
       player: report?.playedBy ?? time?.player,
       actions: actions.get(step) ?? [],
     };
@@ -429,8 +481,7 @@ function chronologicalMapEvents(
             ? "Repair succeeded"
             : "Repair failed"
           : action.type === "play"
-            ? (main.report?.title ??
-              (action.card ? label(action.card) : "Trail card played"))
+            ? specificMapTitle(state, action.card, main.report, count)
             : action.action;
     events.push({
       step: events.length,
@@ -443,6 +494,7 @@ function chronologicalMapEvents(
       card: action.card,
       report: report ? { ...report, deaths } : undefined,
       turn: first.action.turn,
+      day: first.action.day ?? first.action.turn,
       player: first.action.player,
       actions,
     });
@@ -482,25 +534,57 @@ const project = ([lon, lat]: number[]) => ({
   y: ((49 - lat) / 13) * 900,
 });
 export const oregonRoute = routeWaypoints.map(project);
-export function routePoint(progress: number) {
-  const p = Math.max(0, Math.min(1, progress));
-  const lengths = oregonRoute
-    .slice(1)
-    .map((point, i) =>
-      Math.hypot(point.x - oregonRoute[i].x, point.y - oregonRoute[i].y),
-    );
-  let remaining = p * lengths.reduce((a, b) => a + b, 0);
-  for (let i = 0; i < lengths.length; i++) {
-    if (remaining <= lengths[i] || i === lengths.length - 1) {
-      const t = remaining / lengths[i];
-      return {
-        x: oregonRoute[i].x + (oregonRoute[i + 1].x - oregonRoute[i].x) * t,
-        y: oregonRoute[i].y + (oregonRoute[i + 1].y - oregonRoute[i].y) * t,
-      };
-    }
-    remaining -= lengths[i];
+// Catmull–Rom controls keep the route passing through each geographic waypoint.
+const routeSegments = oregonRoute.slice(0, -1).map((from, i) => {
+  const before = oregonRoute[Math.max(0, i - 1)];
+  const to = oregonRoute[i + 1];
+  const after = oregonRoute[Math.min(oregonRoute.length - 1, i + 2)];
+  return {
+    from,
+    to,
+    c1: {
+      x: from.x + (to.x - before.x) / 6,
+      y: from.y + (to.y - before.y) / 6,
+    },
+    c2: { x: to.x - (after.x - from.x) / 6, y: to.y - (after.y - from.y) / 6 },
+  };
+});
+export const routePath =
+  `M${oregonRoute[0].x} ${oregonRoute[0].y} ` +
+  routeSegments
+    .map(({ c1, c2, to }) => `C${c1.x} ${c1.y},${c2.x} ${c2.y},${to.x} ${to.y}`)
+    .join(" ");
+const routeSamples = [{ ...oregonRoute[0], distance: 0 }];
+for (const { from, c1, c2, to } of routeSegments) {
+  for (let i = 1; i <= 40; i++) {
+    const t = i / 40,
+      u = 1 - t;
+    const x =
+      u * u * u * from.x +
+      3 * u * u * t * c1.x +
+      3 * u * t * t * c2.x +
+      t * t * t * to.x;
+    const y =
+      u * u * u * from.y +
+      3 * u * u * t * c1.y +
+      3 * u * t * t * c2.y +
+      t * t * t * to.y;
+    const previous = routeSamples.at(-1)!;
+    routeSamples.push({
+      x,
+      y,
+      distance: previous.distance + Math.hypot(x - previous.x, y - previous.y),
+    });
   }
-  return oregonRoute[0];
+}
+export function routePoint(progress: number) {
+  const distance =
+    Math.max(0, Math.min(1, progress)) * routeSamples.at(-1)!.distance;
+  const index = routeSamples.findIndex((p) => p.distance >= distance);
+  const to = routeSamples[Math.max(0, index)],
+    from = routeSamples[Math.max(0, index - 1)];
+  const t = (distance - from.distance) / (to.distance - from.distance || 1);
+  return { x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t };
 }
 /** Stable uneven spacing, preserving order and the exact current endpoint. */
 export function eventRouteProgress(step: number, count: number) {
@@ -574,6 +658,10 @@ type MapArt = {
   victory: string;
   defeat: string;
   progressWagon: string;
+  mapFort?: string;
+  mapTown?: string;
+  mapStopped?: string;
+  mapLost?: string;
   tombstoneIcon: string;
   tombstone?: string;
   trail: string;
@@ -603,14 +691,14 @@ function inheritanceHistory(
   return `<div class="map-inheritance"><div class="map-event-heading"><span class="map-event-visual">${mapEventVisual({ type: "estate", rolls: [] }, assets)}</span><strong>${esc(state.players[estate.deceased]?.name ?? "Traveller")}’s remaining supplies</strong></div>${recipients
     .map(
       (player) =>
-        `<section class="map-inheritance-group"><div class="map-inheritance-recipient">${assets.portraits[player] ?? ""}<strong>${esc(state.players[player]?.name ?? "Traveller")} inherited</strong></div><div class="map-supplies">${estate.received
+        `<section class="map-inheritance-group"><div class="map-inheritance-recipient">${assets.portraits[player] ?? ""}<strong>${esc(state.players[player]?.name ?? "Traveller")} inherited</strong><span class="map-inline-changes">${estate.received
           .filter((s) => s.player === player)
           .map((s) => mapSupplyChange(s.kind, s.count))
-          .join("")}</div></section>`,
+          .join("")}</span></div></section>`,
     )
     .join(
       "",
-    )}${estate.returned.length ? `<section class="map-inheritance-group"><strong>Returned to the supply exchange</strong><div class="map-supplies">${estate.returned.map((s) => mapSupplyChange(s.kind, -s.count)).join("")}</div></section>` : ""}${!recipients.length && !estate.returned.length ? `<p>No supplies remained.</p>` : ""}</div>`;
+    )}${estate.returned.length ? `<section class="map-inheritance-group"><div class="map-inheritance-recipient"><strong>Returned to the supply exchange</strong><span class="map-inline-changes">${estate.returned.map((s) => mapSupplyChange(s.kind, -s.count)).join("")}</span></div></section>` : ""}${!recipients.length && !estate.returned.length ? `<p>No supplies remained.</p>` : ""}</div>`;
 }
 function mapEventVisual(
   action: Pick<MapAction, "type" | "card" | "rolls">,
@@ -691,66 +779,193 @@ export function mapActionTone(
   if (action.supplies.some((s) => s.delta > 0)) return "positive";
   return "neutral";
 }
-function turnHistory(actions: MapAction[], state: Journey, assets: MapAssets) {
-  const groups: { turn: number; player: number; actions: MapAction[] }[] = [];
+/** Keep each graphic beside the words it illustrates; supply deltas appear once. */
+export function mapActionPresentation(
+  a: MapAction,
+  state: Journey,
+  assets: MapAssets,
+) {
+  const used = new Set<number>();
+  const supply = (index: number, withOwner = false) => {
+    used.add(index);
+    const change = a.supplies[index];
+    return `<span class="map-inline-supply">${mapSupplyChange(change.kind, change.delta)}${withOwner && change.player !== a.player ? `<small>${esc(state.players[change.player]?.name ?? "Traveller")}</small>` : ""}</span>`;
+  };
+  const decorate = (text: string) => {
+    let remaining = text,
+      html = "";
+    while (remaining) {
+      const match = a.supplies
+        .map((change, index) => ({
+          index,
+          name: supplyNames[change.kind],
+          at: used.has(index)
+            ? -1
+            : remaining
+                .toLowerCase()
+                .indexOf(supplyNames[change.kind].toLowerCase()),
+        }))
+        .filter((m) => m.at >= 0)
+        .sort((a, b) => a.at - b.at)[0];
+      if (!match) return html + esc(remaining);
+      html += esc(remaining.slice(0, match.at)) + supply(match.index);
+      remaining = remaining.slice(match.at + match.name.length);
+    }
+    return html;
+  };
+  let action: string;
+  if (a.type === "play" || a.type === "draw") {
+    action = `${a.type === "play" ? "played" : "drew"} <span class="map-inline-card"><span class="map-event-visual">${mapEventVisual({ ...a, rolls: [] }, assets)}</span>${esc(a.card ? label(a.card) : "a trail card")}</span>`;
+    if (a.rolls.length)
+      action += ` · rolled <span class="map-event-visual map-inline-dice">${mapEventVisual(a, assets)}</span>`;
+  } else {
+    action = decorate(a.action.charAt(0).toLowerCase() + a.action.slice(1));
+    if (a.rolls.length)
+      action += ` · rolled <span class="map-event-visual map-inline-dice">${mapEventVisual(a, assets)}</span>`;
+    else if (!a.supplies.length)
+      action += ` <span class="map-event-visual map-inline-symbol">${mapEventVisual(a, assets)}</span>`;
+  }
+  const results = a.text
+    .map((text) => {
+      const who = state.players[a.player]?.name;
+      if (
+        a.type === "draw" &&
+        a.card &&
+        text === `${who} drew ${label(a.card)} for a later turn.`
+      )
+        return "";
+      if (a.type === "cure" || a.type === "take") {
+        for (const change of a.supplies) {
+          for (const verb of ["offered", "gave", "packed"]) {
+            const prefix = `${who} ${verb} ${supplyNames[change.kind].toLowerCase()}.`;
+            if (text.toLowerCase().startsWith(prefix.toLowerCase()))
+              text = text.slice(prefix.length).trim();
+          }
+        }
+      }
+      return text;
+    })
+    .filter(Boolean)
+    .filter(
+      (t) =>
+        !(
+          a.type === "play" &&
+          a.card &&
+          t ===
+            `${state.players[a.player]?.name} laid ${label(a.card).toLowerCase()}.`
+        ),
+    )
+    .map(decorate);
+  // Unnamed changes (such as both sides of an exchange) still belong to the action sentence.
+  a.supplies.forEach((change, index) => {
+    if (!used.has(index))
+      action += ` · ${change.delta > 0 ? "gained" : a.type === "trade" ? "traded" : a.type === "cure" ? "used" : "lost"} ${supply(index, true)}`;
+  });
+  return { action, results };
+}
+function mapActionEntry(a: MapAction, state: Journey, assets: MapAssets) {
+  if (a.inheritance)
+    return `<div class="map-timeline-entry">${inheritanceHistory(a.inheritance, state, assets)}</div>`;
+  const { action, results } = mapActionPresentation(a, state, assets);
+  return `<div class="map-turn-action map-timeline-entry tone-${mapActionTone(a)}"><div class="map-event-heading"><span class="map-action-avatar">${assets.portraits[a.player] ?? ""}</span><span class="map-action-line"><strong>${esc(state.players[a.player]?.name ?? "Traveller")}</strong> ${action}</span></div>${a.context ? `<p class="map-event-context">${esc(a.context)}</p>` : ""}${results.map((t) => `<p>${t}</p>`).join("")}${(a.deaths ?? []).map((index) => mapGravestone(index, state, assets)).join("")}</div>`;
+}
+
+/** Combine adjacent contributions without merging different recipients or days. */
+export function groupSupplyActions(actions: MapAction[]): MapAction[] {
+  const grouped: MapAction[] = [];
+  const target = (a: MapAction) =>
+    a.type === "take" ? "" : a.action.match(/^Gave .+?( to .+)$/i)?.[1];
+  const eligible = (a: MapAction) =>
+    ["take", "cure"].includes(a.type ?? "") &&
+    a.supplies.length > 0 &&
+    !a.rolls.length &&
+    !a.deaths?.length &&
+    !a.inheritance &&
+    target(a) !== undefined;
   for (const action of actions) {
+    const previous = grouped.at(-1);
+    if (
+      previous &&
+      eligible(previous) &&
+      eligible(action) &&
+      previous.type === action.type &&
+      previous.player === action.player &&
+      previous.turn === action.turn &&
+      (previous.day ?? previous.turn) === (action.day ?? action.turn) &&
+      previous.context === action.context &&
+      target(previous) === target(action)
+    ) {
+      const supplies = previous.supplies.map((s) => ({ ...s }));
+      for (const change of action.supplies) {
+        const existing = supplies.find(
+          (s) => s.player === change.player && s.kind === change.kind,
+        );
+        if (existing) existing.delta += change.delta;
+        else supplies.push({ ...change });
+      }
+      const names = [...new Set(supplies.map((s) => supplyNames[s.kind]))];
+      const list =
+        names.length > 1
+          ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`
+          : names[0];
+      grouped[grouped.length - 1] = {
+        ...previous,
+        supplies,
+        action: `${action.type === "take" ? "Packed" : "Gave"} ${list}${target(action)}`,
+        // The final contribution contains the current treatment result.
+        text:
+          action.type === "cure"
+            ? [...action.text]
+            : [...new Set([...previous.text, ...action.text])],
+      };
+    } else grouped.push(action);
+  }
+  return grouped;
+}
+function turnHistory(actions: MapAction[], state: Journey, assets: MapAssets) {
+  const groups: {
+    turn: number;
+    day: number;
+    player: number;
+    actions: MapAction[];
+  }[] = [];
+  for (const action of groupSupplyActions(actions)) {
     // An estate belongs beside the death that caused it, even when the engine
     // has already advanced the active player before distributing supplies.
     const matching = action.inheritance?.linkedToDeath
       ? groups.find((g) => g.turn === action.turn && g.player === action.player)
       : groups.at(-1);
-    if (matching?.turn === action.turn && matching.player === action.player)
+    if (matching?.day === (action.day ?? action.turn))
       matching.actions.push(action);
     else
       groups.push({
         turn: action.turn,
+        day: action.day ?? action.turn,
         player: action.player,
         actions: [action],
       });
   }
   return `<div class="map-turn-history">${groups
     .map((group) => {
-      const heading = `<div class="map-turn-heading"><time datetime="${journeyDate(group.turn - 1, state.startDate)}">${calendarDate(journeyDate(group.turn - 1, state.startDate))}</time><span class="map-turn-badge">Day ${group.turn}</span></div>`;
-      const attribution = `<div class="map-action-player">${assets.portraits[group.player] ?? ""}<strong>${esc(state.players[group.player]?.name ?? "Traveller")}</strong></div>`;
-      return `<section class="map-turn">${heading}${attribution}${group.actions
-        .map((a) =>
-          a.inheritance
-            ? `<div class="map-timeline-entry">${inheritanceHistory(a.inheritance, state, assets)}</div>`
-            : `<div class="map-turn-action map-timeline-entry tone-${mapActionTone(a)}"><div class="map-event-heading"><span class="map-event-visual">${mapEventVisual(a, assets)}</span><strong>${esc(a.action)}${a.rolls.length ? ` · rolled ${a.rolls.join(", ")}` : ""}</strong></div>${a.context ? `<p class="map-event-context">${esc(a.context)}</p>` : ""}${a.text
-                .filter(
-                  (t) =>
-                    !(
-                      a.type === "play" &&
-                      a.card &&
-                      t ===
-                        `${state.players[a.player]?.name} laid ${label(a.card).toLowerCase()}.`
-                    ),
-                )
-                .map((t) => `<p>${esc(t)}</p>`)
-                .join(
-                  "",
-                )}${a.supplies.length ? `<div class="map-supplies">${a.supplies.map((s) => `<span class="map-supply-change">${mapSupplyChange(s.kind, s.delta)}${s.player !== group.player ? `<small>${esc(state.players[s.player]?.name ?? "Traveller")}</small>` : ""}</span>`).join("")}</div>` : ""}${(a.deaths ?? []).map((index) => mapGravestone(index, state, assets)).join("")}</div>`,
-        )
-        .join("")}</section>`;
+      const heading = `<div class="map-turn-heading"><time datetime="${journeyDate(group.day - 1, state.startDate)}">${calendarDate(journeyDate(group.day - 1, state.startDate))}</time><span class="map-turn-badge">Day ${group.day}</span></div>`;
+      return `<section class="map-turn">${heading}${group.actions.map((a) => mapActionEntry(a, state, assets)).join("")}</section>`;
     })
     .join("")}</div>`;
 }
-type MapStopKind = "stopped" | "challenge" | "settlement" | "travel";
+type MapStopKind = "stopped" | "river" | "challenge" | "settlement" | "travel";
 function mapStopKind(event: MapEvent): MapStopKind {
   const kind = event.report?.calamity ?? event.kind;
   if (["axle", "tongue", "wheel", "oxen", "repair"].includes(kind))
     return "stopped";
   if (["town", "fort"].includes(event.card?.type ?? kind)) return "settlement";
-  if (
-    kind === "river" ||
-    kind === "calamity" ||
-    kind in titles ||
-    event.card?.type === "calamity"
-  )
+  if (event.card?.type === "river" || kind === "river") return "river";
+  if (kind === "calamity" || kind in titles || event.card?.type === "calamity")
     return "challenge";
   return "travel";
 }
 function mapStopSymbol(kind: MapStopKind) {
+  if (kind === "river")
+    return '<circle r="7"/><path class="map-stop-glyph" d="M-4-2Q-2-4 0-2T4-2M-4 2Q-2 0 0 2T4 2"/>';
   if (kind === "stopped")
     return '<path d="M-4-7H4L7-4V4L4 7H-4L-7 4V-4Z"/><path class="map-stop-glyph" d="M-2-3V3M2-3V3"/>';
   if (kind === "challenge")
@@ -771,11 +986,304 @@ function mapOutcome(
       : assets.art.outcomeFailure;
   return `<g class="map-outcome map-outcome-${state.status}" transform="translate(${point.x} ${point.y})"><image href="${image}" x="-26" y="-26" width="52" height="52" preserveAspectRatio="xMidYMid meet"/></g>`;
 }
+export type PlaybackToast = { html: string; label: string; tone: string };
+function playbackToasts(
+  action: MapAction | undefined,
+  state: Journey,
+  assets: MapAssets,
+): PlaybackToast[] {
+  if (!action || ["end", "leave"].includes(action.type ?? "")) return [];
+  const who = state.players[action.player]?.name ?? "Traveller";
+  if (action.inheritance) {
+    const estate = action.inheritance;
+    return [...new Set(estate.received.map((s) => s.player))]
+      .map((player) => ({
+        html: `${assets.portraits[player] ?? ""}<span><strong>${esc(state.players[player].name)}</strong> inherited ${estate.received
+          .filter((s) => s.player === player)
+          .map((s) => mapSupplyChange(s.kind, s.count))
+          .join(" ")}</span>`,
+        label: `${state.players[player].name} inherited supplies from ${state.players[estate.deceased]?.name}.`,
+        tone: "positive",
+      }))
+      .concat(
+        estate.returned.length
+          ? [
+              {
+                html: `<span>Returned to the exchange ${estate.returned.map((s) => mapSupplyChange(s.kind, -s.count)).join(" ")}</span>`,
+                label: "Remaining supplies returned to the exchange.",
+                tone: "neutral",
+              },
+            ]
+          : [],
+      );
+  }
+  let text = mapActionPresentation(action, state, assets).action;
+  if (action.type === "roll")
+    text +=
+      action.rolls.at(-1)! % 2 === 0 ? " — crossed" : " — crossing failed";
+  if (action.type === "repair")
+    text += action.rolls.at(-1)! >= 4 ? " — repaired" : " — repair failed";
+  for (const change of action.supplies) {
+    if (!text.includes(`data-supply-kind="${change.kind}"`))
+      text += ` ${mapSupplyChange(change.kind, change.delta)}`;
+  }
+  for (const index of action.deaths ?? [])
+    text += ` · <img class="playback-toast-grave" src="${assets.art.tombstoneIcon}" alt="">${esc(state.players[index].name)} died of ${esc(state.players[index].deathCause ?? "unknown causes")}`;
+  return [
+    {
+      html: `${assets.portraits[action.player] ?? ""}<span><strong>${esc(who)}</strong> ${text}</span>`,
+      label: `${who} ${action.action}. ${action.text.join(" ")}`,
+      tone: mapActionTone(action),
+    },
+  ];
+}
+export type MapPlaybackCue = {
+  step: number;
+  progress: number;
+  day: number;
+  date: string;
+  hold: number;
+  content: string;
+  title?: string;
+  image?: string;
+  marker?: string;
+  toasts?: PlaybackToast[];
+};
+export function playbackHold(event: MapEvent, action?: MapAction) {
+  if (event.kind === "finish" || action?.deaths?.length || action?.inheritance)
+    return 2800;
+  if (event.kind === "start" && !action) return 800;
+  if (action?.type === "end" || action?.type === "leave") return 0;
+  if (action?.type === "roll" || event.card?.type === "river") return 850;
+  const kind = mapStopKind(event);
+  if (kind === "stopped" || action?.type === "repair") return 2300;
+  if (kind === "settlement") return 1800;
+  // These recorded days really are spent at the same location.
+  if (
+    action &&
+    ["draw", "skip", "cure", "town", "trade", "take"].includes(
+      action.type ?? "",
+    )
+  )
+    return 1300;
+  return 0;
+}
+function playbackContent(
+  event: MapEvent,
+  image: string,
+  state: Journey,
+  assets: MapAssets,
+) {
+  const kind = event.report?.calamity ?? event.artKind ?? event.kind;
+  const personal = Object.hasOwn(titles, kind) && !sharedConditions.has(kind);
+  const owner = event.report?.owner ?? event.player;
+  const player = owner === undefined ? undefined : state.players[owner];
+  const portrait =
+    personal && player && assets.portraits[owner!]
+      ? `<span class="playback-event-subject" role="img" aria-label="${esc(player.name)}">${assets.portraits[owner!]}</span>`
+      : "";
+  return `<article class="map-playback-event"><div class="playback-event-illustration"><img class="playback-event-art" src="${image}" alt="">${portrait}</div><h4>${esc(event.title)}</h4></article>`;
+}
+/** Recorded actions share a location; days spent there lengthen its pause. */
+export const PLAYBACK_TOAST_GAP = 1800;
+export function mapPlaybackTimeline(cues: MapPlaybackCue[]) {
+  let time = 0,
+    progress = 0;
+  const dayCounts = new Map<number, number>();
+  cues.forEach((cue) =>
+    dayCounts.set(cue.day, (dayCounts.get(cue.day) ?? 0) + 1),
+  );
+  const dayOrdinals = new Map<number, number>();
+  let previousClock = 8 * 60;
+  let nextToast = 0;
+  const timeline = cues.map((cue, index) => {
+    const from = progress;
+    const move = Math.max(0, cue.progress - from) * 100000;
+    const start = time,
+      arrive = start + move;
+    const daysHere = Math.max(0, (cues[index + 1]?.day ?? cue.day) - cue.day);
+    time =
+      arrive +
+      cue.hold * 1.35 +
+      (cue.hold > 0 ? Math.min(3500, daysHere * 240) : 0);
+    progress = cue.progress;
+    const ordinal = dayOrdinals.get(cue.day) ?? 0;
+    dayOrdinals.set(cue.day, ordinal + 1);
+    const clockAt = Math.max(
+      previousClock,
+      (Math.max(1, cue.day) - 1) * 1440 +
+        480 +
+        (index === 0
+          ? 0
+          : ((ordinal + 1) / ((dayCounts.get(cue.day) ?? 1) + 1)) * 600),
+    );
+    const clockFrom = previousClock;
+    const clockTo =
+      clockAt +
+      (cue.hold > 0
+        ? Math.min(20, 240 / ((dayCounts.get(cue.day) ?? 1) + 1))
+        : 0);
+    previousClock = clockTo;
+    const toastTimes = (cue.toasts ?? []).map(() => {
+      const at = Math.max(arrive, nextToast);
+      nextToast = at + PLAYBACK_TOAST_GAP;
+      return at;
+    });
+    return {
+      ...cue,
+      toastTimes,
+      from,
+      start,
+      arrive,
+      end: time,
+      clockFrom,
+      clockAt,
+      clockTo,
+    };
+  });
+  const last = timeline.at(-1);
+  if (last && nextToast > 0) last.end = Math.max(last.end, nextToast + 1500);
+  return timeline;
+}
+
+/** Fictional clock, monotonic across every recorded day and action. */
+export function mapPlaybackClock(
+  timeline: ReturnType<typeof mapPlaybackTimeline>,
+  elapsed: number,
+) {
+  const cue = timeline.find((c) => elapsed < c.end) ?? timeline.at(-1);
+  const moving = cue && elapsed < cue.arrive;
+  const from = cue ? (moving ? cue.clockFrom : cue.clockAt) : 480;
+  const to = cue ? (moving ? cue.clockAt : cue.clockTo) : 480;
+  const start = cue ? (moving ? cue.start : cue.arrive) : 0;
+  const end = cue ? (moving ? cue.arrive : cue.end) : 0;
+  const fraction = Math.max(
+    0,
+    Math.min(1, (elapsed - start) / (end - start || 1)),
+  );
+  const minute = Math.floor(from + (to - from) * fraction);
+  const day = Math.floor(minute / 1440) + 1;
+  const hour = Math.floor(minute / 60) % 24;
+  return {
+    day,
+    minute,
+    time: `${hour % 12 || 12}:${String(minute % 60).padStart(2, "0")} ${hour < 12 ? "am" : "pm"}`,
+  };
+}
+
+type TooltipRect = { left: number; top: number; right: number; bottom: number };
+/** Favor vertical placements with room to read, clear of the hovered marker and route. */
+export function mapTooltipPlacement(
+  anchor: TooltipRect,
+  width: number,
+  height: number,
+  screen: { width: number; height: number },
+  trail: { x: number; y: number }[] = [],
+) {
+  const margin = 12,
+    gap = 14;
+  const cap = Math.min(height, 380, screen.height * 0.48);
+  const center = (anchor.left + anchor.right) / 2;
+  const candidates: {
+    left: number;
+    top: number;
+    height: number;
+    score: number;
+  }[] = [];
+  for (const side of ["above", "below"] as const) {
+    const available =
+      side === "above"
+        ? anchor.top - gap - margin
+        : screen.height - anchor.bottom - gap - margin;
+    if (available < 72) continue;
+    const h = Math.min(cap, available);
+    for (const shift of [0, -width * 0.4, width * 0.4]) {
+      const left = Math.max(
+        margin,
+        Math.min(screen.width - width - margin, center - width / 2 + shift),
+      );
+      const top = side === "above" ? anchor.top - gap - h : anchor.bottom + gap;
+      const covered = trail.filter(
+        (p) =>
+          p.x >= left - 8 &&
+          p.x <= left + width + 8 &&
+          p.y >= top - 8 &&
+          p.y <= top + h + 8,
+      ).length;
+      candidates.push({
+        left,
+        top,
+        height: h,
+        score: covered * 30 + (cap - h) * 2 + Math.abs(shift) * 0.02,
+      });
+    }
+  }
+  // At very small viewport heights, a lateral placement still leaves the marker visible.
+  for (const side of ["left", "right"] as const) {
+    const left =
+      side === "left" ? anchor.left - gap - width : anchor.right + gap;
+    if (left < margin || left + width > screen.width - margin) continue;
+    const top = Math.max(
+      margin,
+      Math.min(
+        screen.height - cap - margin,
+        (anchor.top + anchor.bottom - cap) / 2,
+      ),
+    );
+    const covered = trail.filter(
+      (p) =>
+        p.x >= left && p.x <= left + width && p.y >= top && p.y <= top + cap,
+    ).length;
+    candidates.push({ left, top, height: cap, score: covered * 30 + 12 });
+  }
+  return (
+    candidates.sort((a, b) => a.score - b.score)[0] ?? {
+      left: margin,
+      top: anchor.bottom + gap,
+      height: Math.max(40, screen.height - anchor.bottom - gap - margin),
+      score: 0,
+    }
+  );
+}
+
+function mapLegend(assets: MapAssets) {
+  const stops = (
+    [
+      ["travel", "Passed through"],
+      ["river", "River crossing"],
+      ["challenge", "Calamity"],
+      ["stopped", "Wagon stopped"],
+      ["settlement", "Town / fort"],
+    ] as const
+  )
+    .map(
+      ([kind, text]) =>
+        `<span><svg class="map-key-stop map-event-dot map-stop-${kind}" viewBox="-10 -10 20 20" aria-hidden="true">${mapStopSymbol(kind)}</svg>${text}</span>`,
+    )
+    .join("");
+  return `<details class="map-legend" open><summary>Map legend <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></summary><div class="map-legend-items"><span><i class="map-key-complete"></i>Travelled</span><span><i class="map-key-remaining"></i>Ahead</span>${stops}<span><img class="map-legend-picture" src="${assets.art.trail}" alt="">Featured event</span><span><img src="${assets.art.outcomeSuccess}" alt="">Reached Oregon</span><span><img src="${assets.art.outcomeFailure}" alt="">Journey lost</span></div><p>Point to any marker for its story.<br>Drag to pan · scroll or pinch to zoom</p></details>`;
+}
 export function journeyMap(
   state: Journey,
   assets: MapAssets,
   record?: RecordedGame,
 ) {
+  if (record?.initial) {
+    const projected = calendarReplay(record).state;
+    state = {
+      ...state,
+      day: projected.day,
+      players: state.players.map((person, index) =>
+        person.alive
+          ? person
+          : {
+              ...person,
+              deathDay: projected.players[index]?.deathDay,
+              deathDate: projected.players[index]?.deathDate,
+            },
+      ),
+    };
+  }
   const events = journeyMapEvents(state, record);
   const end: MapEvent = {
     step: events.length,
@@ -791,10 +1299,10 @@ export function journeyMap(
   };
   const entries = [...events, end];
   const important = importantMapSteps(events);
-  const path = oregonRoute
-    .map((p, i) => `${i ? "L" : "M"}${p.x} ${p.y}`)
-    .join(" ");
+  const path = routePath;
+  const connectors: string[] = [];
   const trailAnchors: string[] = [];
+  const playback: MapPlaybackCue[] = [];
   const markers = entries
     .map((e, i) => {
       const progress = e.progress ?? eventRouteProgress(e.step, state.count);
@@ -817,9 +1325,14 @@ export function journeyMap(
       const endpointDot =
         e.kind === "start" ||
         (state.status === "travel" && i === events.length - 1);
-      trailAnchors.push(
-        `${offset ? `<line class="map-event-connector" x1="${point.x}" y1="${point.y}" x2="${detail.x}" y2="${detail.y}"/>` : ""}${e.kind !== "finish" ? `<g class="map-event-dot map-stop-${mapStopKind(e)}" data-map-dot="${e.step}" transform="translate(${point.x} ${point.y})">${endpointDot && (e.kind === "start" || mapStopKind(e) === "travel") ? `<circle r="8"/>` : mapStopSymbol(mapStopKind(e))}</g>` : ""}`,
-      );
+      if (offset)
+        connectors.push(
+          `<line class="map-event-connector" data-map-connector="${e.step}" x1="${point.x}" y1="${point.y}" x2="${detail.x}" y2="${detail.y}"/>`,
+        );
+      if (e.kind !== "finish")
+        trailAnchors.push(
+          `<g class="map-event-dot map-stop-${mapStopKind(e)}" data-map-dot="${e.step}" transform="translate(${point.x} ${point.y})">${endpointDot && (e.kind === "start" || mapStopKind(e) === "travel") ? `<circle r="8"/>` : mapStopSymbol(mapStopKind(e))}</g>`,
+        );
       const report = e.report;
       const image =
         e.kind === "start"
@@ -860,12 +1373,50 @@ export function journeyMap(
             ? state.note
             : `Trail card ${e.trailStep ?? e.step} of 50${stopTurns.length > 1 ? ` · Turns ${Math.min(...stopTurns)}–${Math.max(...stopTurns)} at this stop` : ""}`;
       const content = `<div class="map-tooltip-summary"><img class="map-detail-art" src="${image}" alt=""><div><p class="eyebrow">${e.kind === "start" ? "Departure" : e.kind === "finish" ? "Journey status" : e.turn !== undefined ? `Turn ${e.turn}` : `Trail marker ${e.trailStep ?? e.step}`}</p><h4>${esc(e.title)}</h4><p>${esc(description)}</p></div></div>${recorded}`;
+      const cueActions = e.actions.length
+        ? groupSupplyActions(e.actions)
+        : [undefined];
+      let markerIcon =
+        e.kind === "finish" && state.status === "lost"
+          ? assets.art.mapLost
+          : e.card?.type === "fort" || e.kind === "fort"
+            ? assets.art.mapFort
+            : e.card?.type === "town" || e.kind === "town"
+              ? assets.art.mapTown
+              : mapStopKind(e) === "stopped"
+                ? assets.art.mapStopped
+                : assets.art.progressWagon;
+      for (const action of cueActions) {
+        if (
+          mapStopKind(e) === "stopped" &&
+          (action?.type === "cure" ||
+            action?.type === "town" ||
+            (action?.type === "repair" && (action.rolls.at(-1) ?? 0) >= 4))
+        )
+          markerIcon = assets.art.progressWagon;
+        const day =
+          action?.day ??
+          action?.turn ??
+          (e.kind === "start" ? 1 : (e.day ?? e.turn ?? journeyDay(state)));
+        playback.push({
+          step: e.step,
+          progress,
+          day,
+          date: calendarDate(journeyDate(day - 1, state.startDate)),
+          hold: playbackHold(e, action),
+          content: playbackContent(e, image, state, assets),
+          title: e.title,
+          image,
+          marker: markerIcon ?? assets.art.progressWagon,
+          toasts: playbackToasts(action, state, assets),
+        });
+      }
       const turns = new Set(e.actions.map((a) => `${a.turn}:${a.player}`)).size;
       const dot =
         quiet || e.kind === "finish"
           ? ""
-          : `<button type="button" class="map-trail-dot" style="left:${point.x / 16}%;top:${point.y / 9}%" data-map-dot-target="${e.step}" data-map-content="${esc(content)}" aria-label="${esc(e.title)}: event details"></button>`;
-      return `${dot}<button type="button" class="map-marker ${quiet ? "is-quiet" : ""} ${e.kind === "finish" || e.kind === "start" ? "is-endpoint" : ""}" style="left:${detail.x / 16}%;top:${detail.y / 9}%" data-map-marker data-map-step="${e.step}" data-map-content="${esc(content)}" aria-label="${e.kind === "start" ? "Start" : e.kind === "finish" ? "Current outcome" : e.turn !== undefined ? `Turn ${e.turn}` : `Card ${e.trailStep ?? e.step}`}: ${esc(e.title)}${turns > 1 ? ` · ${turns} turns` : ""}"><span class="map-marker-image"><img src="${image}" alt="">${report?.deaths?.length ? `<img class="map-death-badge" src="${assets.art.tombstoneIcon}" alt="Death">` : ""}</span>${e.kind === "start" || e.kind === "finish" ? `<span class="map-marker-label">${esc(e.title)}</span>` : ""}</button>`;
+          : `<button type="button" class="map-trail-dot ${mapStopKind(e) === "settlement" ? "is-settlement" : ""}" style="left:${point.x / 16}%;top:${point.y / 9}%" data-map-dot-target="${e.step}" data-map-progress="${progress}" data-map-content="${esc(content)}" aria-label="${esc(e.title)}: event details"></button>`;
+      return `${dot}<button type="button" class="map-marker map-marker-${mapStopKind(e)} ${quiet ? "is-quiet" : ""} ${e.kind === "finish" || e.kind === "start" ? "is-endpoint" : ""}" style="left:${detail.x / 16}%;top:${detail.y / 9}%" data-map-marker data-map-step="${e.step}" data-map-progress="${progress}" data-map-content="${esc(content)}" aria-label="${e.kind === "start" ? "Start" : e.kind === "finish" ? "Current outcome" : e.turn !== undefined ? `Turn ${e.turn}` : `Card ${e.trailStep ?? e.step}`}: ${esc(e.title)}${turns > 1 ? ` · ${turns} turns` : ""}"><span class="map-marker-image"><img src="${image}" alt="">${report?.deaths?.length ? `<img class="map-death-badge" src="${assets.art.tombstoneIcon}" alt="Death">` : ""}</span>${e.kind === "start" || e.kind === "finish" ? `<span class="map-marker-label">${esc(e.title)}</span>` : ""}</button>`;
     })
     .join("");
   const landmarks = [
@@ -874,28 +1425,14 @@ export function journeyMap(
     ["Fort Hall", -112.65, 43.03],
     ["The Dalles", -121.18, 45.6],
   ] as const;
-  return `<section class="journey-map geographic-map" aria-label="Illustrated journey timeline"><div class="map-tools" aria-label="Map controls"><button data-map-zoom="out" aria-label="Zoom out" title="Zoom out">−</button><button data-map-zoom="in" aria-label="Zoom in" title="Zoom in">+</button><button data-map-zoom="fit" aria-label="Fit whole map" title="Fit whole map"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 9V4h5m6 0h5v5m0 6v5h-5M9 20H4v-5"/></svg></button><output class="map-zoom-level" aria-live="polite">100%</output></div><div class="journey-map-scroll" tabindex="0" aria-label="Scroll the journey map"><div class="journey-map-stage"><div class="journey-map-canvas"><img class="journey-map-background" src="${assets.art.journeyMap}" alt="Weathered north-up map of the western United States"><svg class="journey-map-terrain" viewBox="0 0 1600 900" aria-hidden="true"><path class="map-route-shadow" d="${path}"/><path class="map-route-remaining" d="${path}"/><path class="map-route-completed-halo" d="${path}" pathLength="100" stroke-dasharray="${Math.min(100, state.count * 2)} 100"/><path class="map-route" d="${path}" pathLength="100" stroke-dasharray="${Math.min(100, state.count * 2)} 100"/>${landmarks
+  return `<section class="journey-map geographic-map" data-map-start="${state.startDate ?? "1847-04-01"}" aria-label="Illustrated journey timeline"><div class="map-playback" aria-label="Journey playback"><button type="button" data-map-play aria-label="Play journey" title="Play journey"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7Z"/></svg></button><button type="button" data-map-restart aria-label="Restart journey playback" title="Restart journey playback"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M5 8a8 8 0 1 1-1 7M5 3v6h6"/></svg></button><select data-map-speed aria-label="Playback speed"><option value="1">1×</option><option value="2">2×</option><option value="4">4×</option></select><div class="map-playback-timing"><input type="range" data-map-seek min="0" max="1000" value="0" aria-label="Playback position"><div><output data-map-elapsed>0:00</output><span> / </span><output data-map-duration>0:00</output></div></div></div><output class="map-playback-date" aria-live="off"><span class="map-playback-day">Journey playback</span><time>${calendarDate(state.startDate ?? "1847-04-01")}</time><small class="map-playback-clock" title="Simulated time of day">8:00 am</small></output><script type="application/json" data-map-cues>${JSON.stringify(playback).replaceAll("<", "\\u003c")}</script><div class="map-tools" aria-label="Map controls"><button data-map-zoom="out" aria-label="Zoom out" title="Zoom out">−</button><button data-map-zoom="in" aria-label="Zoom in" title="Zoom in">+</button><button data-map-zoom="fit" aria-label="Fit whole map" title="Fit whole map"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 9V4h5m6 0h5v5m0 6v5h-5M9 20H4v-5"/></svg></button><output class="map-zoom-level" aria-live="polite">100%</output></div><div class="journey-map-scroll" tabindex="0" aria-label="Scroll the journey map"><div class="journey-map-stage"><div class="journey-map-canvas"><img class="journey-map-background" src="${assets.art.journeyMap}" alt="Weathered north-up map of the western United States"><svg class="journey-map-terrain" viewBox="0 0 1600 900" aria-hidden="true"><path class="map-route-shadow" d="${path}"/><path class="map-route-remaining" d="${path}"/><path class="map-route-completed-halo" d="${path}" pathLength="100" stroke-dasharray="${Math.min(100, state.count * 2)} 100"/><path class="map-route" d="${path}" pathLength="100" stroke-dasharray="${Math.min(100, state.count * 2)} 100"/>${landmarks
     .map(([name, lon, lat]) => {
       const p = project([lon, lat]);
       return `<g class="map-landmark"><circle cx="${p.x}" cy="${p.y}" r="3"/><text x="${p.x}" y="${p.y - 54}" text-anchor="middle">${name}</text></g>`;
     })
     .join(
       "",
-    )}<text class="map-geographic-label" x="200" y="180">OREGON COUNTRY</text><text class="map-geographic-label" x="1120" y="700">GREAT PLAINS</text><text class="map-geographic-label" x="810" y="255" transform="rotate(-20 810 255)">ROCKY MOUNTAINS</text><text class="map-geographic-label" x="60" y="670" transform="rotate(-90 60 670)">PACIFIC OCEAN</text><g class="map-compass" transform="translate(1450 120)"><path d="M0-35 9 0 0 35-9 0Z"/><path d="M-25 0H25"/><text y="-44" text-anchor="middle">N</text></g>${trailAnchors.join("")}${mapOutcome(state, routePoint(state.count / 50), assets)}</svg>${state.status !== "won" ? '<span class="map-destination-label" style="left:10%;top:24%">Oregon City<br><small>Willamette Valley</small></span>' : ""}${markers}</div></div></div><div class="map-key"><span><i class="map-key-complete"></i>Travelled</span><span><i class="map-key-remaining"></i>Ahead</span>${(
-    [
-      ["travel", "Passed through"],
-      ["challenge", "Challenge"],
-      ["stopped", "Wagon stopped"],
-      ["settlement", "Town / fort"],
-    ] as const
-  )
-    .map(
-      ([kind, text]) =>
-        `<span><svg class="map-key-stop map-event-dot map-stop-${kind}" viewBox="-10 -10 20 20" aria-hidden="true">${mapStopSymbol(kind)}</svg>${text}</span>`,
-    )
-    .join(
-      "",
-    )}<small>Drag to pan · scroll or pinch to zoom · point to an event for its story</small></div></section>`;
+    )}<text class="map-geographic-label" x="200" y="180">OREGON COUNTRY</text><text class="map-geographic-label" x="1120" y="700">GREAT PLAINS</text><text class="map-geographic-label" x="810" y="255" transform="rotate(-20 810 255)">ROCKY MOUNTAINS</text><text class="map-geographic-label" x="60" y="670" transform="rotate(-90 60 670)">PACIFIC OCEAN</text><g class="map-compass" transform="translate(1450 120)"><path d="M0-35 9 0 0 35-9 0Z"/><path d="M-25 0H25"/><text y="-44" text-anchor="middle">N</text></g><g class="map-connectors">${connectors.join("")}</g><g class="map-dots">${trailAnchors.sort((a, b) => Number(a.includes("map-stop-settlement")) - Number(b.includes("map-stop-settlement"))).join("")}</g>${mapOutcome(state, routePoint(state.count / 50), assets)}</svg>${state.status !== "won" ? '<span class="map-destination-label" style="left:10%;top:24%">Oregon City<br><small>Willamette Valley</small></span>' : ""}${markers}<div class="map-playback-wagon" data-map-progress="0" hidden><img src="${assets.art.progressWagon}" alt="The wagon"></div></div></div></div>${mapLegend(assets)}<svg class="playback-callout-leader" aria-hidden="true" hidden><path/><circle r="3"/></svg><aside class="map-playback-callout" hidden aria-label="Current trail event"></aside><div class="map-playback-toasts" aria-live="polite" aria-label="Journey actions"></div></section>`;
 }
 export function journeyMapPreview(
   state: Journey,
@@ -908,13 +1445,11 @@ export function journeyMapPreview(
     height = 240;
   const x = Math.max(0, Math.min(1600 - width, end.x - width / 2));
   const y = Math.max(0, Math.min(900 - height, end.y - height / 2));
-  const path = oregonRoute
-    .map((point, i) => `${i ? "L" : "M"}${point.x} ${point.y}`)
-    .join(" ");
+  const path = routePath;
   return `<button class="journey-map-preview ${extraClass}" ${attributes} aria-label="Explore journey map near the wagon’s latest position"><svg viewBox="${x} ${y} ${width} ${height}" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><image href="${assets.art.journeyMap}" x="0" y="0" width="1600" height="900"/><path class="map-route-remaining" d="${path}"/><path class="map-route-completed-halo" d="${path}" pathLength="100" stroke-dasharray="${Math.min(100, state.count * 2)} 100"/><path class="map-preview-travelled" d="${path}" pathLength="100" stroke-dasharray="${Math.min(100, state.count * 2)} 100"/>${state.status === "travel" ? `<circle cx="${end.x}" cy="${end.y}" r="24" fill="var(--paper)" stroke="#59654b" stroke-width="2"/><image href="${assets.art.progressWagon}" x="${end.x - 22}" y="${end.y - 20}" width="44" height="40"/>` : mapOutcome(state, end, assets)}</svg><span class="map-preview-caption"><strong>${state.status === "travel" ? "The latest stretch of trail" : "Your journey’s final stretch"}</strong><span>Explore map →</span></span></button>`;
 }
 export function installJourneyMapInteraction() {
-  let active: HTMLButtonElement | undefined,
+  let active: HTMLElement | undefined,
     tooltip: HTMLDivElement | undefined,
     timer: ReturnType<typeof setTimeout> | undefined;
   const hide = () => {
@@ -934,21 +1469,40 @@ export function installJourneyMapInteraction() {
       hide();
       return;
     }
-    const width = tooltip.offsetWidth,
-      height = tooltip.offsetHeight;
-    const left = Math.max(
-      12,
-      Math.min(innerWidth - width - 12, r.left + r.width / 2 - width / 2),
+    const width = tooltip.offsetWidth;
+    const canvas = active
+      .closest(".journey-map-canvas")
+      ?.getBoundingClientRect();
+    const progress = Number(active.dataset.mapProgress ?? 0);
+    const trail = canvas
+      ? Array.from({ length: 61 }, (_, i) => {
+          const point = routePoint(progress + (i - 30) * 0.002);
+          return {
+            x: canvas.left + (point.x / 1600) * canvas.width,
+            y: canvas.top + (point.y / 900) * canvas.height,
+          };
+        })
+      : [];
+    const placement = mapTooltipPlacement(
+      r,
+      width,
+      tooltip.scrollHeight + 2,
+      { width: innerWidth, height: innerHeight },
+      trail,
     );
-    const top =
-      r.bottom + 12 + height <= innerHeight - 12
-        ? r.bottom + 12
-        : Math.max(12, r.top - height - 12);
-    Object.assign(tooltip.style, { left: `${left}px`, top: `${top}px` });
+    Object.assign(tooltip.style, {
+      left: `${placement.left}px`,
+      top: `${placement.top}px`,
+      maxHeight: `${placement.height}px`,
+    });
   };
-  const show = (marker: HTMLButtonElement) => {
+  const show = (
+    marker: HTMLElement,
+    content = marker.dataset.mapContent!,
+    playback = false,
+  ) => {
     if (timer) clearTimeout(timer);
-    if (active === marker) {
+    if (active === marker && !playback) {
       position();
       return;
     }
@@ -956,9 +1510,9 @@ export function installJourneyMapInteraction() {
     active = marker;
     tooltip = document.createElement("div");
     tooltip.id = "journey-map-tooltip";
-    tooltip.className = "journey-map-tooltip";
+    tooltip.className = `journey-map-tooltip${playback ? " is-playback" : ""}`;
     tooltip.setAttribute("role", "tooltip");
-    tooltip.innerHTML = marker.dataset.mapContent!;
+    tooltip.innerHTML = content;
     document.body.append(tooltip);
     active.setAttribute("aria-describedby", tooltip.id);
     position();
@@ -966,14 +1520,22 @@ export function installJourneyMapInteraction() {
       if (timer) clearTimeout(timer);
     });
     tooltip.addEventListener("pointerleave", () => {
-      timer = setTimeout(hide, 120);
+      if (!playback) timer = setTimeout(hide, 120);
     });
+    tooltip
+      .querySelectorAll("img")
+      .forEach((img) => img.addEventListener("load", position, { once: true }));
   };
   document.addEventListener("pointerover", (event) => {
     const marker = (event.target as Element).closest<HTMLButtonElement>(
       "[data-map-marker], [data-map-dot-target]",
     );
-    if (marker) show(marker);
+    if (
+      marker &&
+      marker.closest<HTMLElement>(".journey-map")?.dataset.playbackRunning !==
+        "true"
+    )
+      show(marker);
   });
   document.addEventListener("pointerout", (event) => {
     if (
@@ -1011,6 +1573,13 @@ export function installJourneyMapInteraction() {
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") hide();
   });
+  window.addEventListener("journey-map-playback-event", ((
+    event: CustomEvent<{ marker: HTMLElement; content: string }>,
+  ) => {
+    show(event.detail.marker, event.detail.content, true);
+  }) as EventListener);
+  window.addEventListener("journey-map-playback-hide", hide);
+  window.addEventListener("journey-map-camera", position);
   window.addEventListener("resize", hide);
   window.addEventListener("journey-map-pan", hide);
   document.addEventListener("scroll", position, true);
@@ -1083,9 +1652,9 @@ export function initializeJourneyMapViewport() {
   const focusEnd = () => {
     fit();
     update(viewport.clientWidth < 600 ? 3.5 : 2.3);
-    const marker = map.querySelector<HTMLElement>(
-      ".map-marker.is-endpoint:last-child",
-    );
+    const marker = Array.from(
+      map.querySelectorAll<HTMLElement>(".map-marker.is-endpoint"),
+    ).at(-1);
     if (marker) {
       const rect = marker.getBoundingClientRect(),
         view = viewport.getBoundingClientRect();
@@ -1225,10 +1794,427 @@ export function initializeJourneyMapViewport() {
     },
     { signal },
   );
+  const followWagon = (
+    point: { x: number; y: number },
+    stopped: boolean,
+    delta: number,
+  ) => {
+    cancelAnimationFrame(zoomFrame);
+    const smooth = matchMedia("(prefers-reduced-motion: reduce)").matches
+      ? 1
+      : 1 - Math.exp(-delta / 360);
+    const target =
+      viewport.clientWidth < 600 ? (stopped ? 4 : 3.4) : stopped ? 2.8 : 2.3;
+    update(zoom + (target - zoom) * smooth);
+    const rect = canvas.getBoundingClientRect(),
+      view = viewport.getBoundingClientRect();
+    viewport.scrollLeft +=
+      (rect.left + (point.x / 1600) * rect.width - view.left - view.width / 2) *
+      smooth;
+    viewport.scrollTop +=
+      (rect.top + (point.y / 900) * rect.height - view.top - view.height / 2) *
+      smooth;
+    window.dispatchEvent(new Event("journey-map-camera"));
+  };
+  const disposePlayback = installMapPlayback(
+    map as HTMLElement,
+    viewport,
+    fit,
+    followWagon,
+  );
   disposeMapViewport = () => {
+    disposePlayback();
     observer.disconnect();
     cancelAnimationFrame(zoomFrame);
     abort.abort();
   };
   requestAnimationFrame(focusEnd);
+}
+
+function installMapPlayback(
+  map: HTMLElement,
+  viewport: HTMLElement,
+  fit: () => void,
+  followWagon: (
+    point: { x: number; y: number },
+    stopped: boolean,
+    delta: number,
+  ) => void,
+) {
+  const cues = JSON.parse(
+    map.querySelector("[data-map-cues]")?.textContent ?? "[]",
+  ) as MapPlaybackCue[];
+  const timeline = mapPlaybackTimeline(cues),
+    duration = timeline.at(-1)?.end ?? 0;
+  // Prime marker decodes before their first on-map swap.
+  new Set(
+    cues.map((cue) => cue.marker).filter((src): src is string => !!src),
+  ).forEach((src) => {
+    const image = new Image();
+    image.src = src;
+    image.decode().catch(() => {});
+  });
+  const notifications = timeline.flatMap((cue) =>
+    (cue.toasts ?? []).map((toast, index) => ({
+      toast,
+      at: cue.toastTimes[index],
+      progress: cue.progress,
+    })),
+  );
+  const play = map.querySelector<HTMLButtonElement>("[data-map-play]")!;
+  const restart = map.querySelector<HTMLButtonElement>("[data-map-restart]")!;
+  const speed = map.querySelector<HTMLSelectElement>("[data-map-speed]")!;
+  const seek = map.querySelector<HTMLInputElement>("[data-map-seek]")!;
+  const elapsedOutput =
+    map.querySelector<HTMLOutputElement>("[data-map-elapsed]")!;
+  const durationOutput = map.querySelector<HTMLOutputElement>(
+    "[data-map-duration]",
+  )!;
+  const day = map.querySelector<HTMLElement>(".map-playback-day")!;
+  const date = map.querySelector<HTMLElement>(".map-playback-date time")!;
+  const clock = map.querySelector<HTMLElement>(".map-playback-clock")!;
+  const path = map.querySelector<SVGPathElement>(".map-route")!;
+  const halo = map.querySelector<SVGPathElement>(".map-route-completed-halo")!;
+  const wagon = map.querySelector<HTMLElement>(".map-playback-wagon")!;
+  const wagonImage = wagon.querySelector<HTMLImageElement>("img")!;
+  const defaultIcon = wagonImage.getAttribute("src")!;
+  const canvas = map.querySelector<HTMLElement>(".journey-map-canvas")!;
+  const callout = map.querySelector<HTMLElement>(".map-playback-callout")!;
+  const leader = map.querySelector<SVGSVGElement>(".playback-callout-leader")!;
+  const stack = map.querySelector<HTMLElement>(".map-playback-toasts")!;
+  const abort = new AbortController();
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)");
+  const formatTime = (ms: number) =>
+    `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, "0")}`;
+  durationOutput.textContent = formatTime(duration);
+  let frame = 0,
+    elapsed = 0,
+    previous = 0,
+    running = false,
+    started = false;
+  let shownStep = -1,
+    lastToast = -1,
+    presented: MapPlaybackCue | undefined;
+  const toasts: { el: HTMLDivElement; at: number }[] = [];
+  const hideHover = () =>
+    window.dispatchEvent(new Event("journey-map-playback-hide"));
+  const updateButton = () => {
+    map.dataset.playbackRunning = String(running);
+    const label = running
+      ? "Pause journey"
+      : elapsed >= duration
+        ? "Replay journey"
+        : started
+          ? "Resume journey"
+          : "Play journey";
+    play.setAttribute("aria-label", label);
+    play.title = label;
+    play.setAttribute("aria-pressed", String(running));
+    play.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${running ? "M7 5h4v14H7ZM14 5h4v14h-4Z" : "m8 5 11 7-11 7Z"}"/></svg>`;
+  };
+  const pause = () => {
+    running = false;
+    cancelAnimationFrame(frame);
+    updateButton();
+  };
+  const screenPoint = (progress: number) => {
+    const p = routePoint(progress),
+      r = canvas.getBoundingClientRect();
+    return {
+      x: r.left + (p.x / 1600) * r.width,
+      y: r.top + (p.y / 900) * r.height,
+    };
+  };
+  const positionDetails = () => {
+    if (!presented) return;
+    const point = screenPoint(
+        Number(wagon.dataset.mapProgress ?? presented.progress),
+      ),
+      view = viewport.getBoundingClientRect(),
+      base = map.getBoundingClientRect();
+    const visible =
+      point.x >= view.left + 8 &&
+      point.x <= view.right - 8 &&
+      point.y >= view.top + 8 &&
+      point.y <= view.bottom - 8;
+    callout.hidden = !visible;
+    leader.toggleAttribute("hidden", !visible);
+    if (visible) {
+      const width = callout.offsetWidth,
+        height = callout.offsetHeight;
+      const left = Math.max(
+        view.left + 10,
+        Math.min(view.right - width - 10, point.x - width / 2),
+      );
+      // Artwork stays above the wagon; action notifications occupy the space below.
+      const top = point.y - height - 52;
+      callout.style.left = `${left - base.left}px`;
+      callout.style.top = `${top - base.top}px`;
+      const sx = Math.max(left + 10, Math.min(left + width - 10, point.x));
+      const sy =
+        point.y > top + height
+          ? top + height
+          : point.y < top
+            ? top
+            : Math.max(top + 10, Math.min(top + height - 10, point.y));
+      leader.setAttribute("viewBox", `0 0 ${base.width} ${base.height}`);
+      leader
+        .querySelector("path")!
+        .setAttribute(
+          "d",
+          `M${sx - base.left} ${sy - base.top} L${point.x - base.left} ${point.y - base.top}`,
+        );
+      const dot = leader.querySelector("circle")!;
+      dot.setAttribute("cx", String(point.x - base.left));
+      dot.setAttribute("cy", String(point.y - base.top));
+    }
+    if (toasts.length) {
+      stack.style.left = `${point.x - base.left}px`;
+      stack.style.top = `${point.y + 54 - base.top}px`;
+      stack.style.maxWidth = `${Math.max(120, Math.min(360, view.width - 24))}px`;
+      // Keep the naturally sized stack inside the map at either edge.
+      const width = stack.offsetWidth;
+      stack.style.left = `${Math.max(view.left + width / 2 + 10, Math.min(view.right - width / 2 - 10, point.x)) - base.left}px`;
+      stack.hidden = !visible;
+    }
+  };
+  const clearToasts = () => {
+    toasts.forEach((t) => t.el.remove());
+    toasts.length = 0;
+  };
+  const showToasts = () => {
+    // Present at most one new action per frame, with a fixed gap in playback time.
+    if (
+      lastToast + 1 < notifications.length &&
+      notifications[lastToast + 1].at <= elapsed
+    ) {
+      const notification = notifications[++lastToast];
+      if (elapsed - notification.at < 6500) {
+        const toast = notification.toast;
+        const el = document.createElement("div");
+        el.className = `map-playback-toast tone-${toast.tone}`;
+        el.innerHTML = toast.html;
+        el.title = toast.label;
+        el.setAttribute("role", "status");
+        el.dataset.playbackAt = String(notification.at);
+        stack.append(el);
+        toasts.push({ el, at: notification.at });
+        if (!reduced.matches)
+          el.animate(
+            [
+              { opacity: 0, translate: "0 24px" },
+              { opacity: 1, translate: "0 0" },
+            ],
+            { duration: 260, easing: "ease-out" },
+          );
+      }
+    }
+    while (toasts.length > 3) {
+      toasts.shift()!.el.remove();
+    }
+    for (let i = toasts.length - 1; i >= 0; i--) {
+      const toast = toasts[i],
+        age = elapsed - toast.at;
+      if (age >= 6500) {
+        toast.el.remove();
+        toasts.splice(i, 1);
+      }
+    }
+    const front = toasts.at(-1)?.el;
+    stack.style.width = front ? `${front.offsetWidth}px` : "";
+    stack.style.height = front ? `${front.offsetHeight}px` : "";
+    for (let i = 0; i < toasts.length; i++) {
+      const toast = toasts[i],
+        depth = toasts.length - 1 - i;
+      toast.el.style.zIndex = String(3 - depth);
+      toast.el.style.transform = `translateX(-50%) translateY(${-depth * 9}px) scale(${1 - depth * 0.055})`;
+      toast.el.style.opacity = String(
+        Math.min(1, (6500 - (elapsed - toast.at)) / 1500) * (1 - depth * 0.24),
+      );
+      toast.el.setAttribute("aria-hidden", String(depth > 0));
+    }
+  };
+  const draw = (delta = 16) => {
+    const found = timeline.findIndex((c) => elapsed < c.end),
+      index = found < 0 ? timeline.length - 1 : found,
+      cue = timeline[index];
+    if (!cue) return;
+    const moving = elapsed < cue.arrive;
+    const fraction = moving
+      ? Math.max(
+          0,
+          Math.min(1, (elapsed - cue.start) / (cue.arrive - cue.start || 1)),
+        )
+      : 1;
+    const progress = cue.from + (cue.progress - cue.from) * fraction;
+    path.setAttribute("stroke-dasharray", `${progress * 100} 100`);
+    halo.setAttribute("stroke-dasharray", `${progress * 100} 100`);
+    const point = routePoint(progress);
+    wagon.hidden = false;
+    wagon.style.left = `${point.x / 16}%`;
+    wagon.style.top = `${point.y / 9}%`;
+    wagon.dataset.mapProgress = String(progress);
+    const icon = moving ? defaultIcon : (cue.marker ?? defaultIcon);
+    if (wagonImage.getAttribute("src") !== icon) {
+      wagonImage.src = icon;
+      wagonImage.alt = moving ? "The wagon" : (cue.title ?? "The wagon");
+    }
+    followWagon(point, !moving && cue.hold > 0, delta);
+    map
+      .querySelectorAll<HTMLElement | SVGElement>(
+        "[data-map-step], [data-map-dot-target], [data-map-dot], [data-map-connector]",
+      )
+      .forEach((el) => {
+        const step = Number(
+          el.dataset.mapStep ??
+            el.dataset.mapDotTarget ??
+            el.dataset.mapDot ??
+            el.dataset.mapConnector,
+        );
+        el.classList.toggle(
+          "is-playback-unreached",
+          step > cue.step || (step === cue.step && moving),
+        );
+      });
+    map
+      .querySelector(".map-outcome")
+      ?.classList.toggle(
+        "is-playback-unreached",
+        elapsed < (timeline.at(-1)?.arrive ?? duration),
+      );
+    const simulated = mapPlaybackClock(timeline, elapsed);
+    day.textContent = `Day ${simulated.day}`;
+    date.textContent = calendarDate(
+      journeyDate(simulated.day - 1, map.dataset.mapStart),
+    );
+    clock.textContent = simulated.time;
+    elapsedOutput.textContent = formatTime(elapsed);
+    seek.value = String(duration ? (elapsed / duration) * 1000 : 0);
+    seek.style.setProperty(
+      "--played",
+      `${duration ? (elapsed / duration) * 100 : 0}%`,
+    );
+    seek.setAttribute(
+      "aria-valuetext",
+      `${formatTime(elapsed)} of ${formatTime(duration)}`,
+    );
+    const displayIndex = moving ? Math.max(0, index - 1) : index;
+    presented = timeline[displayIndex];
+    if (shownStep !== presented.step) {
+      shownStep = presented.step;
+      callout.innerHTML = presented.content;
+      callout.hidden = false;
+      if (!reduced.matches)
+        callout.animate(
+          [
+            { opacity: 0, transform: "translateY(6px) scale(.98)" },
+            { opacity: 1, transform: "none" },
+          ],
+          { duration: 320, easing: "ease-out" },
+        );
+    }
+    map
+      .querySelectorAll(".is-playback-active")
+      .forEach((el) => el.classList.remove("is-playback-active"));
+    map
+      .querySelector(`[data-map-step="${presented.step}"]`)
+      ?.classList.add("is-playback-active");
+    showToasts();
+    positionDetails();
+  };
+  const tick = (now: number) => {
+    if (!running || !map.isConnected) return;
+    const delta = Math.min(100, now - previous);
+    elapsed = Math.min(duration, elapsed + delta * Number(speed.value));
+    previous = now;
+    draw(delta);
+    if (elapsed >= duration) pause();
+    else frame = requestAnimationFrame(tick);
+  };
+  const start = (reset = false) => {
+    if (!timeline.length) return;
+    if (reset || elapsed >= duration) {
+      elapsed = 0;
+      shownStep = -1;
+      lastToast = -1;
+      clearToasts();
+    }
+    if (!started || reset) {
+      map.classList.add("is-playing-journey");
+      fit();
+    }
+    hideHover();
+    started = true;
+    running = true;
+    previous = performance.now();
+    draw();
+    updateButton();
+    cancelAnimationFrame(frame);
+    frame = requestAnimationFrame(tick);
+  };
+  play.addEventListener("click", () => (running ? pause() : start()), {
+    signal: abort.signal,
+  });
+  restart.addEventListener("click", () => start(true), {
+    signal: abort.signal,
+  });
+  seek.addEventListener(
+    "input",
+    () => {
+      pause();
+      hideHover();
+      if (!started) {
+        map.classList.add("is-playing-journey");
+        fit();
+        started = true;
+      }
+      elapsed = (duration * Number(seek.value)) / 1000;
+      shownStep = -1;
+      clearToasts();
+      const futureToast = notifications.findIndex((n) => n.at > elapsed);
+      lastToast = (futureToast < 0 ? notifications.length : futureToast) - 2;
+      lastToast = Math.max(-1, lastToast);
+      draw(1000);
+      updateButton();
+    },
+    { signal: abort.signal },
+  );
+  map.addEventListener(
+    "click",
+    (event) => {
+      if ((event.target as Element).closest("[data-map-zoom]")) pause();
+    },
+    { signal: abort.signal },
+  );
+  viewport.addEventListener(
+    "keydown",
+    (event) => {
+      if (["+", "=", "-", "0"].includes(event.key)) pause();
+    },
+    { signal: abort.signal },
+  );
+  viewport.addEventListener("pointerdown", pause, { signal: abort.signal });
+  viewport.addEventListener("wheel", pause, { signal: abort.signal });
+  document.addEventListener(
+    "visibilitychange",
+    () => {
+      if (document.hidden) pause();
+    },
+    { signal: abort.signal },
+  );
+  window.addEventListener(
+    "resize",
+    () => {
+      if (started) positionDetails();
+    },
+    { signal: abort.signal },
+  );
+  return () => {
+    pause();
+    hideHover();
+    clearToasts();
+    callout.hidden = true;
+    leader.setAttribute("hidden", "");
+    abort.abort();
+  };
 }

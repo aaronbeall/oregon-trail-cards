@@ -645,6 +645,7 @@ test("portrait birthdays and fictional journey dates persist through death and r
   assert.equal(g.state.players[1].birthday, portraitBirthdays[11]);
   assert.equal(journeyDate(30), "1847-05-01");
   g.state.turn = 13;
+  g.state.day = 13;
   calamity(g, "dysentery");
   assert.equal(g.state.players[0].deathDay, 12);
   assert.equal(g.state.players[0].deathDate, "1847-04-13");
@@ -736,4 +737,97 @@ test("state severity separates self-healing, repeat-triggered, and timed fatal c
   assert.equal(hazardSeverity({ kind: "starvation", rounds: 2 }), "danger");
   for (const kind of ["starvation", "cold", "typhoid", "oxen", "axle"])
     assert.equal(hazardSeverity({ kind, rounds: 1 }), "critical");
+});
+
+test("river attempts share one calendar day while turns and round deadlines advance", () => {
+  const g = new TrailGame(() => 0.25);
+  g.reset(["Ada", "Bea", "Cy"]);
+  g.state.players[0].hand = [
+    { id: 9000, type: "river", left: 1, right: 1, rotated: false },
+  ];
+  assert.ok(g.play(0));
+  g.random = () => 0.4;
+  assert.ok(g.cross());
+  assert.equal(g.state.turn, 2);
+  assert.equal(g.state.day, 1);
+  g.random = () => 0.7;
+  assert.ok(g.cross());
+  assert.equal(g.state.turn, 3);
+  assert.equal(g.state.day, 1);
+  g.random = () => 0.3;
+  assert.ok(g.cross());
+  assert.equal(g.state.turn, 4);
+  assert.equal(g.state.day, 2);
+  g.state.players[g.state.current].hand = [];
+  assert.ok(g.draw());
+  assert.equal(g.state.turn, 5);
+  assert.equal(g.state.day, 3);
+  const saved = readSave(JSON.stringify(g.state));
+  assert.equal(saved.day, 3);
+  const resumed = new TrailGame(() => 0.25, saved);
+  assert.equal(resumed.state.day, 3);
+  const legacy = structuredClone(g.state);
+  delete legacy.day;
+  assert.equal(new TrailGame(() => 0.25, legacy).state.day, legacy.turn);
+  assert.equal(readSave(JSON.stringify({ ...g.state, day: 0 })), undefined);
+});
+
+test("river deaths and terminal arrivals use the crossing date rather than a later turn date", () => {
+  const g = new TrailGame(() => 0.25);
+  g.reset(["Ada", "Bea", "Cy"]);
+  g.state.count = 49;
+  g.state.players[0].hand = [
+    { id: 9000, type: "river", left: 1, right: 1, rotated: false },
+  ];
+  assert.ok(g.play(0));
+  g.random = () => 0.4;
+  assert.ok(g.cross());
+  g.random = () => 0.3;
+  assert.ok(g.cross());
+  assert.equal(g.state.status, "won");
+  assert.equal(g.state.day, 1);
+  assert.equal(g.state.turn, 3);
+  const d = new TrailGame(() => 0.25);
+  d.reset(["Ada", "Bea", "Cy"]);
+  d.state.players[0].hand = [
+    {
+      id: 9001,
+      type: "river",
+      deadly: true,
+      left: 1,
+      right: 1,
+      rotated: false,
+    },
+  ];
+  assert.ok(d.play(0));
+  d.random = () => 0;
+  assert.ok(d.cross());
+  assert.equal(d.state.players[0].deathDay, 0);
+  assert.equal(d.state.players[0].deathDate, "1847-04-01");
+  assert.equal(d.state.day, 1);
+  const e = new TrailGame(() => 0.25);
+  e.reset(["Ada", "Bea", "Cy"]);
+  e.state.players[0].hand = [
+    { id: 9002, type: "river", left: 1, right: 1, rotated: false },
+  ];
+  e.state.hazards = [
+    {
+      id: 200,
+      kind: "cold",
+      owner: 2,
+      needs: { clothes: 1 },
+      rounds: 1,
+      waiting: [0, 1],
+      born: 0,
+      skip: 0,
+    },
+  ];
+  assert.ok(e.play(0));
+  e.random = () => 0.4;
+  assert.ok(e.cross());
+  assert.ok(e.cross());
+  assert.equal(e.state.turn, 3);
+  assert.equal(e.state.day, 1);
+  assert.equal(e.state.players[2].alive, false);
+  assert.equal(e.state.players[2].deathDate, "1847-04-01");
 });
