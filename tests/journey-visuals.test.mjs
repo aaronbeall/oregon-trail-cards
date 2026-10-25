@@ -43,6 +43,7 @@ const {
   mapActionPresentation,
   groupSupplyActions,
   playbackToasts,
+  mapPlayerProfile,
   playbackPartySummary,
   playbackPlayerStates,
   mapResultText,
@@ -1402,6 +1403,30 @@ test("map point titles use recorded settlement names and specific calamities", a
   assert.deepEqual(history.archive, before);
 });
 
+test("recorded map artwork retains descriptive calamity titles", async () => {
+  const { GameHistory } = await import(historySource);
+  for (const [kind, title] of [
+    ["thief", "A thief stole from Ada"],
+    ["measles", "Ada has Measles"],
+    ["hunting", "Ada went hunting"],
+  ]) {
+    const g = new TrailGame(() => 0.25);
+    g.reset(["Ada", "Bea", "Cy"]);
+    g.state.players[0].hand = [{ id: 9000, type: "calamity", left: 1, right: 1, rotated: false }];
+    g.state.calamities = [kind];
+    const history = new GameHistory({ getItem: () => null, setItem() {} });
+    history.capture(g.state, { type: "start" });
+    assert.ok(g.play(0));
+    g.state.trailReports = { 1: { title, calamity: kind, card: { ...g.state.run[0] } } };
+    history.capture(g.state, { type: "play", args: { play: "0" } });
+    assert.equal(journeyMapEvents(g.state, history.archive.games[0])[1].title, title);
+    const art = new Proxy({}, { get: (_, key) => `${String(key)}.webp` });
+    const map = journeyMap(g.state, { art, calamities: {}, portraits: [] }, history.archive.games[0]);
+    const cues = JSON.parse(map.match(/<script type="application\/json" data-map-cues>([^]*?)<\/script>/)[1]);
+    assert.equal(cues.find((cue) => cue.step === 1).title, title);
+  }
+});
+
 test("playback pauses for wagon states independently of player actions", () => {
   const event = {
     step: 1,
@@ -1651,4 +1676,36 @@ test("multiple toast recipients at one stop receive separate presentation times"
     times.every((at, i) => !i || at - times[i - 1] >= PLAYBACK_TOAST_GAP),
   );
   assert.ok(timeline.at(-1).end > times.at(-1));
+});
+
+
+test("compact map profiles show graphical health, card stacks and counted supplies", () => {
+  const g = new TrailGame(() => 0.25);
+  g.reset(["Ada", "Bea", "Cy"]);
+  const assets = { art: { trail: "trail.webp", tombstoneIcon: "grave.webp" }, portraits: ["portrait"], calamities: { arm: "arm.webp" } };
+  g.state.players[0].supplies = ["water", "water", "medicine"];
+  const healthy = mapPlayerProfile(g.state, 0, assets);
+  assert.match(healthy, /map-profile-card-stack/);
+  assert.match(healthy, /is-healthy/);
+  assert.match(healthy, /data-supply-kind="water"/);
+  assert.match(healthy, /supply-count">2</);
+  g.state.hazards = [{ id: 1, kind: "arm", owner: 0, skip: 2, rounds: 2, needs: {} }];
+  const injured = mapPlayerProfile(g.state, 0, assets);
+  assert.match(injured, /arm.webp/);
+  assert.match(injured, /2 turns to heal/);
+  assert.doesNotMatch(injured, /is-healthy/);
+  g.state.players[0].alive = false;
+  g.state.players[0].deathCause = "Dysentery";
+  g.state.players[0].epitaph = "Took the scenic route. Forever.";
+  g.state.players[0].deathDate = "1847-04-12";
+  g.state.players[0].deathDay = 11;
+  const dead = mapPlayerProfile(g.state, 0, assets);
+  assert.match(dead, /grave.webp/);
+  assert.match(dead, /Dysentery/);
+  assert.match(dead, /Took the scenic route. Forever./);
+  assert.match(dead, /Apr 12, 1847/);
+  assert.match(dead, /11 days on the trail/);
+  assert.match(dead, /memorial-dates/);
+  assert.doesNotMatch(dead, /<\/strong><\/div><small>/, "no unrelated snapshot date below the player name");
+  assert.doesNotMatch(dead, /map-profile-inventory/);
 });

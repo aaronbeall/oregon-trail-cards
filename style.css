@@ -7666,6 +7666,17 @@ body.timeline-compact .trail-afflicted {
 }
 
 /* Atlas detail: connectors sit behind every trail anchor and image. */
+.geographic-map .map-marker:not(.is-quiet) {
+  transform: translate(-50%, -50%) scale(var(--map-art-scale, 1));
+}
+.geographic-map .map-marker:not(.is-quiet) .map-marker-image {
+  width: 40px;
+  height: 40px;
+}
+.geographic-map .map-marker.is-endpoint .map-marker-image {
+  width: 52px;
+  height: 52px;
+}
 .map-connectors {
   pointer-events: none;
 }
@@ -8564,3 +8575,32 @@ body.timeline-compact .trail-afflicted {
     serif;
   white-space: nowrap;
 }
+
+/* Compact historical player profiles in the atlas. */
+.map-profile-health-list { display: grid; gap: 6px; margin: 10px 0; }
+.map-profile-health {
+  display: flex; align-items: center; gap: 9px; padding: 7px;
+  border-radius: 5px; background: #a96a4320; color: #8a593a;
+}
+.map-profile-health > img { width: 44px; height: 40px; object-fit: cover; border-radius: 3px; }
+.map-profile-health > div { display: grid; gap: 3px; }
+.map-profile-health small { font-size: 11px; }
+.map-profile-health.severity-risk { background: #b3822925; color: #89602d; }
+.map-profile-health.severity-danger,
+.map-profile-health.severity-critical { background: #a8433228; color: #913e30; }
+.map-profile-health.is-healthy { background: #60784b16; color: #526b43; }
+.map-profile-health.is-healthy > svg { width: 26px; height: 26px; }
+.map-profile-health.is-dead { background: #57564720; color: #555446; }
+.map-profile-health.is-dead > img { object-fit: contain; }
+.map-profile-inventory { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 6px 2px 2px; }
+.map-profile-inventory .supply-label { display: none; }
+.map-profile-inventory .supply-stack { width: 31px; height: 31px; }
+.map-profile-inventory .supply-seal { width: 29px; height: 29px; }
+.map-profile-inventory .supply-count { font-size: 10px; }
+.map-profile-cards { position: relative; margin-right: 5px; }
+.map-profile-card-stack { display: block; width: 25px; height: 34px; padding: 3px; background: #f3e8cb; border: 1px solid #777b62; border-radius: 2px; box-shadow: -2px 2px #ddd2b5, -3px 3px #777b62, -5px 5px #ddd2b5, -6px 6px #777b62; }
+.map-profile-card-stack img { width: 100%; height: 23px; object-fit: cover; }
+.map-profile-cards > b { position: absolute; right: -5px; bottom: -2px; padding: 1px 4px; border-radius: 3px; background: #657054; color: #fff6df; font-size: 10px; }
+.map-profile-memorial .map-event-memorial { width: 240px; max-width: 100%; margin: 3px auto; }
+.map-profile-memorial .memorial-epitaph { white-space: pre-wrap; overflow-wrap: anywhere; }
+.map-profile-memorial .map-profile-death-cause { text-align: center; margin: 5px 0 0; font-size: 12px; }

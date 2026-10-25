@@ -473,7 +473,7 @@ export class TrailGame {
     }));
     const shop = { ...stock };
     players.forEach((p) => p.supplies.forEach((k) => shop[k]--));
-    this.nameLocations(deck);
+    this.nameLocations([...deck, ...players.flatMap((p) => p.hand)]);
     return {
       version: 2,
       players,

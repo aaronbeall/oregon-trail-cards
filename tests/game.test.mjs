@@ -125,6 +125,28 @@ test("printed deck counts and supplies by party size", () => {
     );
   }
 });
+test("all settlements have unique names, including those dealt into starting hands", () => {
+  let dealtSettlements = 0;
+  for (let n = 2; n <= 6; n++) {
+    for (let run = 1; run <= 10; run++) {
+      const g = fresh(n, seed(run));
+      const settlements = (state) =>
+        [...state.deck, ...state.players.flatMap((p) => p.hand)].filter(
+          (c) => c.type === "town" || c.type === "fort",
+        );
+      const locations = settlements(g.state);
+      assert.equal(locations.length, 4);
+      assert.ok(locations.every((c) => c.locationName?.length > 4));
+      assert.equal(new Set(locations.map((c) => c.locationName)).size, 4);
+      dealtSettlements += g.state.players.flatMap((p) => p.hand).filter(
+        (c) => c.type === "town" || c.type === "fort",
+      ).length;
+      const restored = new TrailGame(seed(99), readSave(JSON.stringify(g.state)));
+      assert.deepEqual(settlements(restored.state), locations);
+    }
+  }
+  assert.ok(dealtSettlements > 0);
+});
 test("180 degree rotation flips positions as well as ends; locations are universal", () => {
   assert.deepEqual(ends(card("trail", 0, 1, { rotated: true })), [1, 2]);
   const g = fresh();

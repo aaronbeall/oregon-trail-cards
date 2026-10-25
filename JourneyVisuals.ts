@@ -1,5 +1,6 @@
 import {
   titles,
+  hazardSeverity,
   names as supplyNames,
   type Supply,
   label,
@@ -47,6 +48,7 @@ export function journeyFlow(
   return renderJourneyFlow(games, selected, mode);
 }
 export type MapAction = {
+  playerProfilesAfter?: string[];
   playerStatesAfter?: string[][];
   livingAfter?: number[];
   calamity?: Calamity;
@@ -144,6 +146,20 @@ export function playbackPlayerStates(state: Journey) {
     ];
   });
 }
+export function mapPlayerProfile(state: Journey, index: number, assets: MapAssets) {
+  const player = state.players[index];
+  const conditions = state.hazards.filter((h) => h.owner === index && !sharedConditions.has(h.kind));
+  const health = !player.alive
+    ? `<div class="map-profile-memorial">${mapGravestone(index, state, assets)}<p class="map-profile-death-cause">Died of ${esc(player.deathCause ?? "unknown causes")}.</p></div>`
+    : conditions.length
+      ? conditions.map((h) => `<div class="map-profile-health severity-${hazardSeverity(h)}"><img src="${assets.calamities[h.kind]}" alt=""><div><strong>${esc(titles[h.kind])}</strong><small>${h.kind === "arm" ? `${h.rounds ?? h.skip} turns to heal` : h.rounds !== null ? `${h.rounds} round${h.rounds === 1 ? "" : "s"} to treat` : "Fatal if struck again"}</small></div></div>`).join("")
+      : `<div class="map-profile-health is-healthy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M20 5 9 17l-5-5"/></svg><strong>In good health</strong></div>`;
+  const supplies = (Object.keys(supplyNames) as Supply[]).map((kind) => {
+    const count = player.supplies.filter((s) => s === kind).length;
+    return count ? supplyEmblem(kind, count, true) : "";
+  }).join("");
+  return `<div class="map-roster-tooltip map-profile"><div class="map-event-heading">${assets.portraits[index] ?? ""}<strong>${esc(player.name)}</strong></div><div class="map-profile-health-list">${health}</div>${player.alive ? `<div class="map-profile-inventory"><span class="map-profile-cards" aria-label="${player.hand.length} trail cards"><span class="map-profile-card-stack" aria-hidden="true"><img src="${assets.art.trail}" alt=""></span><b>${player.hand.length}</b></span>${supplies || '<small>No supplies</small>'}</div>` : ""}</div>`;
+}
 function rosterTooltip(
   name: string,
   portrait: string,
@@ -165,6 +181,7 @@ function specificMapTitle(
   card?: TrailCard,
   report?: TrailReport,
   step?: number,
+  calamity = report?.calamity,
 ) {
   const named = namedMapCard(state, card ?? report?.card, step);
   if (named?.type === "river")
@@ -173,8 +190,8 @@ function specificMapTitle(
     return named.locationName;
   const generic = ["Town", "Fort", "Calamity", "Trail card played"];
   if (report?.title && !generic.includes(report.title)) return report.title;
-  return report?.calamity
-    ? titles[report.calamity]
+  return calamity
+    ? titles[calamity]
     : named
       ? label(named)
       : (report?.title ?? "Earlier trail");
@@ -182,6 +199,7 @@ function specificMapTitle(
 export function journeyMapEvents(
   state: Journey,
   record?: RecordedGame,
+  profileAssets?: MapAssets,
 ): MapEvent[] {
   const timing = new Map<
     number,
@@ -382,6 +400,7 @@ export function journeyMapEvents(
       }
       const list = actions.get(step) ?? [];
       list.push({
+        playerProfilesAfter: profileAssets ? next.players.map((_, i) => mapPlayerProfile(next, i, profileAssets)) : undefined,
         playerStatesAfter: playbackPlayerStates(next),
         livingAfter: next.players.flatMap((p, index) =>
           p.alive ? [index] : [],
@@ -559,9 +578,7 @@ function chronologicalMapEvents(
             ? "Repair succeeded"
             : "Repair failed"
           : action.type === "play"
-            ? action.calamity
-              ? titles[action.calamity]
-              : specificMapTitle(state, action.card, main.report, count)
+            ? specificMapTitle(state, action.card, main.report, count, action.calamity)
             : action.action;
     events.push({
       step: events.length,
@@ -1068,6 +1085,7 @@ export function groupSupplyActions(actions: MapAction[]): MapAction[] {
           : names[0];
       grouped[grouped.length - 1] = {
         ...previous,
+        playerProfilesAfter: action.playerProfilesAfter,
         playerStatesAfter: action.playerStatesAfter,
         livingAfter: action.livingAfter,
         wagonAfter: action.wagonAfter,
@@ -1211,6 +1229,7 @@ export function playbackToasts(
   ];
 }
 export type MapPlaybackCue = {
+  playerProfiles?: string[];
   playerStates?: string[][];
   summary?: string;
   turn?: number;
@@ -1484,7 +1503,7 @@ export function journeyMap(
   record?: RecordedGame,
 ) {
   if (record) state = { ...state, startDate: record.initial.startDate };
-  const events = journeyMapEvents(state, record);
+  const events = journeyMapEvents(state, record, assets);
   const end: MapEvent = {
     step: events.length,
     progress: state.count / 50,
@@ -1536,6 +1555,7 @@ export function journeyMap(
   let living = (record?.initial ?? state).players.flatMap((p, index) =>
     p.alive ? [index] : [],
   );
+  let playerProfiles = (record?.initial ?? state).players.map((_, i) => mapPlayerProfile(record?.initial ?? state, i, assets));
   let playerStates = playbackPlayerStates(record?.initial ?? state);
   const markers = entries
     .map((e, i) => {
@@ -1640,6 +1660,7 @@ export function journeyMap(
           markerIcon = assets.art.progressWagon;
         playback.push({
           ...baseCues.get(action ?? e)!,
+          playerProfiles: action?.playerProfilesAfter ?? playerProfiles,
           playerStates: action?.playerStatesAfter ?? playerStates,
           summary:
             e.kind === "finish" ? playbackPartySummary(state) : undefined,
@@ -1664,6 +1685,7 @@ export function journeyMap(
             markerIcon !== assets.art.mapTown,
         });
         living = action?.livingAfter ?? living;
+        playerProfiles = action?.playerProfilesAfter ?? playerProfiles;
         playerStates = action?.playerStatesAfter ?? playerStates;
       }
       const turns = new Set(e.actions.map((a) => `${a.turn}:${a.player}`)).size;
@@ -1680,7 +1702,7 @@ export function journeyMap(
     ["Fort Hall", -112.65, 43.03],
     ["The Dalles", -121.18, 45.6],
   ] as const;
-  return `<section class="journey-map geographic-map" data-map-start="${state.startDate ?? "1847-04-01"}" aria-label="Illustrated journey timeline"><div class="map-playback" aria-label="Journey playback"><button type="button" data-map-prev-turn aria-label="Previous turn" title="Previous turn" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h2v14H5Zm13 0L8 12l10 7Z"/></svg></button><button type="button" data-map-play aria-label="Play journey" title="Play journey"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7Z"/></svg></button><button type="button" data-map-next-turn aria-label="Next turn" title="Next turn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 5h2v14h-2ZM6 5l10 7-10 7Z"/></svg></button><button type="button" data-map-restart aria-label="Restart journey playback" title="Restart journey playback"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M5 8a8 8 0 1 1-1 7M5 3v6h6"/></svg></button><select data-map-speed aria-label="Playback speed"><option value="0.5">½×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select><div class="map-playback-timing"><input type="range" data-map-seek min="0" max="1000" value="0" aria-label="Playback position"><div><output data-map-elapsed>0:00</output><span> / </span><output data-map-duration>0:00</output></div></div></div><div class="map-playback-date" aria-live="off"><div class="playback-date-copy"><span class="map-playback-day">Journey playback</span><time>${calendarDate(state.startDate ?? "1847-04-01")}</time><small class="map-playback-clock" title="Simulated time of day">8:00 am</small></div><div class="map-playback-roster" aria-label="Playback travellers"><div class="playback-player-portraits">${state.players.map((p, i) => `<span class="playback-player${p.alive ? "" : " is-dead"}" data-playback-player="${i}" data-player-name="${esc(p.name)}" tabindex="0" aria-label="${esc(p.name)}: current state" data-map-content="${esc(rosterTooltip(p.name, assets.portraits[i] ?? "", playbackPlayerStates(state)[i], calendarDate(journeyDate(journeyDay(state) - 1, state.startDate))))}">${assets.portraits[i] ?? ""}<img class="playback-player-grave" src="${assets.art.tombstoneIcon}" alt="Gravestone for ${esc(p.name)}"><span class="playback-player-turn" aria-hidden="true">▸</span></span>`).join("")}</div><span data-playback-player-label></span></div></div><script type="application/json" data-map-cues>${JSON.stringify(playback).replaceAll("<", "\\u003c")}</script><div class="map-tools" aria-label="Map controls"><button data-map-zoom="out" aria-label="Zoom out" title="Zoom out">−</button><button data-map-zoom="in" aria-label="Zoom in" title="Zoom in">+</button><button data-map-zoom="fit" aria-label="Fit whole map" title="Fit whole map"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 9V4h5m6 0h5v5m0 6v5h-5M9 20H4v-5"/></svg></button><output class="map-zoom-level" aria-live="polite">100%</output></div><div class="journey-map-scroll" tabindex="0" aria-label="Scroll the journey map"><div class="journey-map-stage"><div class="journey-map-canvas"><img class="journey-map-background" src="${assets.art.journeyMap}" alt="Weathered north-up map of the western United States"><svg class="journey-map-terrain" viewBox="0 0 1600 900" aria-hidden="true"><path class="map-route-shadow" d="${path}"/><path class="map-route-remaining" d="${path}"/><path class="map-route-completed-halo" d="${path}" pathLength="100" stroke-dasharray="${Math.min(100, state.count * 2)} 100"/><path class="map-route" d="${path}" pathLength="100" stroke-dasharray="${Math.min(100, state.count * 2)} 100"/>${landmarks
+  return `<section class="journey-map geographic-map" data-map-start="${state.startDate ?? "1847-04-01"}" aria-label="Illustrated journey timeline"><div class="map-playback" aria-label="Journey playback"><button type="button" data-map-prev-turn aria-label="Previous turn" title="Previous turn" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h2v14H5Zm13 0L8 12l10 7Z"/></svg></button><button type="button" data-map-play aria-label="Play journey" title="Play journey"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7Z"/></svg></button><button type="button" data-map-next-turn aria-label="Next turn" title="Next turn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 5h2v14h-2ZM6 5l10 7-10 7Z"/></svg></button><button type="button" data-map-restart aria-label="Restart journey playback" title="Restart journey playback"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M5 8a8 8 0 1 1-1 7M5 3v6h6"/></svg></button><select data-map-speed aria-label="Playback speed"><option value="0.5">½×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select><div class="map-playback-timing"><input type="range" data-map-seek min="0" max="1000" value="0" aria-label="Playback position"><div><output data-map-elapsed>0:00</output><span> / </span><output data-map-duration>0:00</output></div></div></div><div class="map-playback-date" aria-live="off"><div class="playback-date-copy"><span class="map-playback-day">Journey playback</span><time>${calendarDate(state.startDate ?? "1847-04-01")}</time><small class="map-playback-clock" title="Simulated time of day">8:00 am</small></div><div class="map-playback-roster" aria-label="Playback travellers"><div class="playback-player-portraits">${state.players.map((p, i) => `<span class="playback-player${p.alive ? "" : " is-dead"}" data-playback-player="${i}" data-player-name="${esc(p.name)}" tabindex="0" aria-label="${esc(p.name)}: current state" data-map-content="${esc(mapPlayerProfile(state, i, assets))}">${assets.portraits[i] ?? ""}<img class="playback-player-grave" src="${assets.art.tombstoneIcon}" alt="Gravestone for ${esc(p.name)}"><span class="playback-player-turn" aria-hidden="true">▸</span></span>`).join("")}</div><span data-playback-player-label></span></div></div><script type="application/json" data-map-cues>${JSON.stringify(playback).replaceAll("<", "\\u003c")}</script><div class="map-tools" aria-label="Map controls"><button data-map-zoom="out" aria-label="Zoom out" title="Zoom out">−</button><button data-map-zoom="in" aria-label="Zoom in" title="Zoom in">+</button><button data-map-zoom="fit" aria-label="Fit whole map" title="Fit whole map"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 9V4h5m6 0h5v5m0 6v5h-5M9 20H4v-5"/></svg></button><output class="map-zoom-level" aria-live="polite">100%</output></div><div class="journey-map-scroll" tabindex="0" aria-label="Scroll the journey map"><div class="journey-map-stage"><div class="journey-map-canvas"><img class="journey-map-background" src="${assets.art.journeyMap}" alt="Weathered north-up map of the western United States"><svg class="journey-map-terrain" viewBox="0 0 1600 900" aria-hidden="true"><path class="map-route-shadow" d="${path}"/><path class="map-route-remaining" d="${path}"/><path class="map-route-completed-halo" d="${path}" pathLength="100" stroke-dasharray="${Math.min(100, state.count * 2)} 100"/><path class="map-route" d="${path}" pathLength="100" stroke-dasharray="${Math.min(100, state.count * 2)} 100"/>${landmarks
     .map(([name, lon, lat]) => {
       const p = project([lon, lat]);
       return `<g class="map-landmark"><circle cx="${p.x}" cy="${p.y}" r="3"/><text x="${p.x}" y="${p.y - 54}" text-anchor="middle">${name}</text></g>`;
@@ -1878,6 +1900,7 @@ export function initializeJourneyMapViewport() {
       v = (y - old.top) / old.height;
     zoom = Math.max(1, Math.min(5, next));
     canvas.style.width = `${baseWidth * zoom}px`;
+    canvas.style.setProperty("--map-art-scale", `${(baseWidth * zoom) / 1600}`);
     const current = canvas.getBoundingClientRect();
     viewport.scrollLeft += current.left + u * current.width - x;
     viewport.scrollTop += current.top + v * current.height - y;
@@ -2457,7 +2480,7 @@ function installMapPlayback(
         el.classList.toggle("is-dead", !alive);
         if (active) el.setAttribute("aria-current", "true");
         else el.removeAttribute("aria-current");
-        el.dataset.mapContent = rosterTooltip(
+        el.dataset.mapContent = presented!.playerProfiles?.[player] ?? rosterTooltip(
           el.dataset.playerName!,
           el.querySelector(".portrait")?.outerHTML ?? "",
           presented!.playerStates?.[player] ?? [],
